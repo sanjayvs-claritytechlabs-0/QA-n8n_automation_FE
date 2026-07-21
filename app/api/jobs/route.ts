@@ -3,6 +3,7 @@ import {
   defaultJobOptions,
   jsonError,
   n8nConfig,
+  type AiProvider,
   type Mode,
 } from "@/lib/n8n";
 
@@ -13,6 +14,8 @@ type Body = {
   csv_text?: string;
   project_id?: string;
   callback_url?: string;
+  ai_provider?: AiProvider;
+  ai_model?: string;
 };
 
 export async function POST(request: Request) {
@@ -27,6 +30,11 @@ export async function POST(request: Request) {
   const website_url = body.website_url?.trim() ?? "";
   const mode: Mode = body.mode === "manual_csv" ? "manual_csv" : "ai_qa";
   const csv_text = body.csv_text?.trim() ?? "";
+  const ai_provider: AiProvider | undefined =
+    body.ai_provider === "openai" || body.ai_provider === "gemini"
+      ? body.ai_provider
+      : undefined;
+  const ai_model = body.ai_model?.trim() || undefined;
 
   if (!project_name) {
     return jsonError(400, "VALIDATION_ERROR", "project_name is required");
@@ -50,7 +58,7 @@ export async function POST(request: Request) {
   let options: Record<string, unknown>;
   try {
     cfg = n8nConfig();
-    options = defaultJobOptions(mode);
+    options = defaultJobOptions(mode, { ai_provider, ai_model });
   } catch (e) {
     return jsonError(
       500,
@@ -78,14 +86,43 @@ export async function POST(request: Request) {
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => null);
-    return NextResponse.json(data ?? { ok: false, error: { code: "UPSTREAM_ERROR", message: "Empty response" } }, {
-      status: res.status,
-    });
+    if (!res.ok) {
+      const upstreamMsg =
+        data && typeof data === "object" && data.error
+          ? typeof data.error === "string"
+            ? data.error
+            : (data.error as { message?: string }).message
+          : null;
+      return NextResponse.json(
+        data ?? {
+          ok: false,
+          error: {
+            code: "UPSTREAM_ERROR",
+            message:
+              upstreamMsg ||
+              `n8n returned HTTP ${res.status} (is Create-or-Start published? check N8N_BASE_URL)`,
+          },
+        },
+        { status: res.status >= 400 ? res.status : 502 },
+      );
+    }
+    return NextResponse.json(data ?? { ok: true }, { status: res.status });
   } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    const cause =
+      err.cause && typeof err.cause === "object" && "code" in err.cause
+        ? String((err.cause as { code?: string }).code)
+        : "";
+    const hint =
+      cause === "ENOTFOUND"
+        ? ` DNS lookup failed for N8N_BASE_URL host — check Railway n8n public URL in Frontend/.env`
+        : cause
+          ? ` (${cause})`
+          : "";
     return jsonError(
       502,
       "UPSTREAM_UNAVAILABLE",
-      e instanceof Error ? e.message : "Failed to reach n8n",
+      `${err.message}${hint}`,
     );
   }
 }

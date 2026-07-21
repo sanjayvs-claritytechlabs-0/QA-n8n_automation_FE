@@ -22,6 +22,18 @@ type JobStatus = {
   current_stage?: string | null;
   stages?: Stage[];
   report_url?: string | null;
+  report_object_key?: string | null;
+  report_json_object_key?: string | null;
+  result_summary?: {
+    counts?: {
+      total?: number;
+      passed?: number;
+      failed?: number;
+      error?: number;
+      skipped?: number;
+    };
+    pass_rate?: number | null;
+  } | null;
   error?: { code?: string; message?: string } | null;
   finished_at?: string | null;
   created_at?: string | null;
@@ -114,13 +126,41 @@ export default function JobPage() {
         </div>
       )}
 
-      {job?.report_url && (
+      {(job?.report_object_key || job?.report_url) && (
         <div className="alert" style={{ marginBottom: "1rem" }}>
           Report ready:{" "}
-          <a href={job.report_url} target="_blank" rel="noopener noreferrer">
+          <a
+            href={`/api/jobs/${encodeURIComponent(jobId)}/report`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             Open HTML report
           </a>
+          {job.report_json_object_key ? (
+            <>
+              {" · "}
+              <a
+                href={`/api/artifacts?key=${encodeURIComponent(job.report_json_object_key)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                report.json
+              </a>
+            </>
+          ) : null}
         </div>
+      )}
+
+      {job?.result_summary?.counts && (
+        <p className="meta" style={{ marginBottom: "1rem" }}>
+          Results: {job.result_summary.counts.passed ?? 0} passed /{" "}
+          {job.result_summary.counts.failed ?? 0} failed /{" "}
+          {job.result_summary.counts.error ?? 0} error /{" "}
+          {job.result_summary.counts.skipped ?? 0} skipped
+          {job.result_summary.pass_rate != null
+            ? ` · pass rate ${(job.result_summary.pass_rate * 100).toFixed(0)}%`
+            : null}
+        </p>
       )}
 
       {job?.stages && job.stages.length > 0 && (
