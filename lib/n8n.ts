@@ -61,11 +61,10 @@ export function defaultJobOptions(
       overrides?.ai_model?.trim() ||
       env("AI_MODEL") ||
       defaultModelFor(provider),
+    // Safe under Railway ~300s discover proxy; override via CRAWL_MAX_* env if needed.
+    crawl_max_depth: Number(env("CRAWL_MAX_DEPTH") || 1),
+    crawl_max_pages: Number(env("CRAWL_MAX_PAGES") || 8),
   };
-  const depth = env("CRAWL_MAX_DEPTH");
-  if (depth) options.crawl_max_depth = Number(depth);
-  const pages = env("CRAWL_MAX_PAGES");
-  if (pages) options.crawl_max_pages = Number(pages);
   const artifactBase = env("ARTIFACT_BASE_URL");
   if (artifactBase) options.artifact_base_url = artifactBase.replace(/\/$/, "");
   return options;
