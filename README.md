@@ -121,15 +121,34 @@ This app **must** run as a normal Next.js app (Node serverless). Static export b
 
 ### Still seeing “API routes are not running”?
 
+Production today fails like this when Vercel serves a **static** build:
+
+- Response header `X-Matched-Path=/500` (not `/api/jobs`)
+- Body contains `"nextExport":true`
+
+That is **not** an env-var naming issue. The GitHub `next.config.ts` has no `output: "export"` — so the Vercel project is still building/serving static somehow (Output Directory override, Build Command with `next export`, wrong project, or a stale Production alias).
+
 Live check (PowerShell):
 
 ```powershell
+(Invoke-WebRequest "https://YOUR-APP.vercel.app/api/health" -SkipHttpErrorCheck).Content
 (Invoke-WebRequest "https://YOUR-APP.vercel.app/api/jobs?limit=1" -SkipHttpErrorCheck).Content
 ```
 
-- If the body is **HTML** and contains `nextExport` → Vercel is still static. Fix Output Directory / Framework, then **Redeploy** (S3 env names will not fix this).
-- If the body is **JSON** `{ "ok": true, ... }` → API works; refresh the UI.
-- If JSON `{ "ok": false, "error": { "code": "CONFIG_ERROR", ... } }` → add missing `N8N_BASE_URL` / `QA_WEBHOOK_TOKEN` and redeploy.
+- **HTML** + `nextExport` → still static. Do the recovery steps below.
+- **JSON** from `/api/health` → serverless works; then fix `N8N_*` if jobs still fail.
+
+#### Recovery (when the UI settings “look correct” but production is still static)
+
+1. Open the **latest Production deployment** → **Building** log:
+   - Must **not** say exporting / static export / writing to `out/`
+   - Must list **Serverless Functions** / App Router routes like `/api/health`, `/api/jobs`
+2. **Settings → Build & Development Settings** → click **Reset** / clear overrides for Output Directory (Override = OFF).
+3. Confirm **Git** repo is `QA-n8n_automation_FE` and Production branch is `main`.
+4. **Deployments** → ⋮ on latest → **Redeploy** → untick “Use existing Build Cache”.
+5. If still `nextExport`: **Delete the Vercel project** → **Import** the same GitHub repo again → Framework **Next.js** → leave Output Directory untouched → paste env vars → Deploy.
+
+`npm run build` now runs `scripts/assert-not-static.mjs` so a static export **fails the Vercel build** instead of shipping a broken site.
 
 ## Smoke-test against live n8n
 
