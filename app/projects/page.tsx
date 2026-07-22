@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type ProjectRow = {
   project_id: string;
@@ -24,13 +25,21 @@ export default function ProjectsPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/projects?limit=100", { cache: "no-store" });
-      const data = await res.json().catch(() => null);
+      const raw = await res.text();
+      let data: Record<string, unknown> | null = null;
+      try {
+        data = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        data = null;
+      }
       if (!res.ok || !data?.ok) {
-        setError(data?.error?.message || `Load failed (${res.status})`);
+        setError(apiErrorMessage(data ?? raw, res.status, "Load failed"));
         setProjects([]);
         return;
       }
-      setProjects(Array.isArray(data.projects) ? data.projects : []);
+      setProjects(
+        Array.isArray(data.projects) ? (data.projects as ProjectRow[]) : [],
+      );
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");

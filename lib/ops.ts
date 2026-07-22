@@ -2,6 +2,23 @@ import { NextResponse } from "next/server";
 import { jsonError, n8nConfig } from "@/lib/n8n";
 import { cleanupS3 } from "@/lib/s3";
 
+function extractUpstreamMessage(
+  data: Record<string, unknown> | null,
+  fallback: string,
+): string {
+  if (!data) return fallback;
+  const err = data.error;
+  if (typeof err === "string" && err.trim()) return err.trim();
+  if (err && typeof err === "object") {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg.trim();
+  }
+  if (typeof data.message === "string" && data.message.trim()) {
+    return data.message.trim();
+  }
+  return fallback;
+}
+
 export async function n8nFetch(
   path: string,
   init?: RequestInit,
@@ -28,13 +45,25 @@ export function upstreamError(
   data: Record<string, unknown> | null,
   fallback: string,
 ) {
-  return NextResponse.json(
-    data ?? {
-      ok: false,
-      error: { code: "UPSTREAM_ERROR", message: fallback },
-    },
-    { status: res.status >= 400 ? res.status : 502 },
-  );
+  const message = extractUpstreamMessage(data, fallback);
+  const body =
+    data && typeof data === "object" && data.error
+      ? data
+      : {
+          ok: false,
+          error: {
+            code:
+              (data &&
+                typeof data.code === "string" &&
+                data.code) ||
+              "UPSTREAM_ERROR",
+            message,
+            details: data ?? undefined,
+          },
+        };
+  return NextResponse.json(body, {
+    status: res.status >= 400 ? res.status : 502,
+  });
 }
 
 export function configError(e: unknown) {

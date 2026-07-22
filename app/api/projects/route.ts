@@ -6,6 +6,9 @@ import {
   upstreamError,
 } from "@/lib/ops";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 /** GET /api/projects → n8n GET /webhook/qa/projects */
 export async function GET(request: NextRequest) {
   let limit = Number(request.nextUrl.searchParams.get("limit"));

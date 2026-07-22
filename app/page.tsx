@@ -8,7 +8,8 @@ import {
   defaultModelFor,
   type AiProvider,
   type Mode,
-} from "@/lib/n8n";
+} from "@/lib/ai-options";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type JobListRow = {
   job_id: string;
@@ -53,15 +54,21 @@ export default function HomePage() {
     setJobsLoading(true);
     try {
       const res = await fetch("/api/jobs?limit=50", { cache: "no-store" });
-      const data = await res.json().catch(() => null);
+      const raw = await res.text();
+      let data: Record<string, unknown> | null = null;
+      try {
+        data = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        data = null;
+      }
       if (!res.ok || !data?.ok) {
         setJobsError(
-          data?.error?.message || `Could not load jobs (${res.status})`,
+          apiErrorMessage(data ?? raw, res.status, "Could not load jobs"),
         );
         setJobs([]);
         return;
       }
-      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+      setJobs(Array.isArray(data.jobs) ? (data.jobs as JobListRow[]) : []);
       setJobsError(null);
     } catch (e) {
       setJobsError(e instanceof Error ? e.message : "Network error");

@@ -7,6 +7,9 @@ import {
   type Mode,
 } from "@/lib/n8n";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 type Body = {
   project_name?: string;
   website_url?: string;
@@ -54,16 +57,36 @@ export async function GET(request: NextRequest) {
         cache: "no-store",
       },
     );
-    const data = await res.json().catch(() => null);
+    const data = (await res.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
     if (!res.ok) {
+      const upstreamMsg =
+        data && typeof data === "object"
+          ? typeof data.error === "string"
+            ? data.error
+            : data.error &&
+                typeof data.error === "object" &&
+                typeof (data.error as { message?: unknown }).message ===
+                  "string"
+              ? String((data.error as { message: string }).message)
+              : typeof data.message === "string"
+                ? data.message
+                : null
+          : null;
       return NextResponse.json(
-        data ?? {
-          ok: false,
-          error: {
-            code: "UPSTREAM_ERROR",
-            message: `n8n returned HTTP ${res.status}`,
-          },
-        },
+        data?.error
+          ? data
+          : {
+              ok: false,
+              error: {
+                code: "UPSTREAM_ERROR",
+                message:
+                  upstreamMsg ||
+                  `n8n returned HTTP ${res.status} (is Jobs List published? check N8N_BASE_URL / QA_WEBHOOK_TOKEN)`,
+              },
+            },
         { status: res.status >= 400 ? res.status : 502 },
       );
     }

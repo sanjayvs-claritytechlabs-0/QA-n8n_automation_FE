@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type JobRow = {
   job_id: string;
@@ -45,13 +46,19 @@ export default function ProjectDetailPage() {
         `/api/projects/${encodeURIComponent(projectId)}`,
         { cache: "no-store" },
       );
-      const data = await res.json().catch(() => null);
+      const raw = await res.text();
+      let data: Record<string, unknown> | null = null;
+      try {
+        data = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        data = null;
+      }
       if (!res.ok || !data?.ok) {
-        setError(data?.error?.message || `Load failed (${res.status})`);
+        setError(apiErrorMessage(data ?? raw, res.status, "Load failed"));
         return;
       }
-      setProject(data.project || null);
-      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+      setProject((data.project as Project) || null);
+      setJobs(Array.isArray(data.jobs) ? (data.jobs as JobRow[]) : []);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");

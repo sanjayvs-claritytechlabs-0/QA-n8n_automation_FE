@@ -108,11 +108,15 @@ Open http://localhost:3000
 ## Vercel deploy
 
 1. Create a new git repo from this `Frontend/` folder (or push this folder as the repo root).
-2. Import the repo in [Vercel](https://vercel.com) → Framework Preset: Next.js.
-3. Add the env vars above (Production + Preview as needed).
-4. Deploy. No build command overrides required (`npm run build` / Next default).
+2. Import the repo in [Vercel](https://vercel.com) → Framework Preset: **Next.js** (not “Other” / static).
+3. **Do not** set Output Directory to `out` (that forces static export — `/api/*` then returns HTML 500 with `nextExport: true`).
+4. Leave Build Command as default (`next build`). Repo includes `vercel.json` with `framework: nextjs`.
+5. Add the env vars above (Production + Preview as needed): at minimum `N8N_BASE_URL`, `QA_WEBHOOK_TOKEN`, `PLAYWRIGHT_SERVICE_URL`, `S3_BUCKET`, plus S3 storage vars for reports.
+6. Deploy / Redeploy.
 
 Optional: set Root Directory to `Frontend` if you keep this folder inside a monorepo instead of splitting the git root.
+
+If Recent Jobs / Projects show opaque `… (500)`: open the Network tab for `/api/jobs` or `/api/projects`. HTML body with `nextExport` means serverless Route Handlers are not running — fix the Vercel settings above and redeploy.
 
 ## Smoke-test against live n8n
 

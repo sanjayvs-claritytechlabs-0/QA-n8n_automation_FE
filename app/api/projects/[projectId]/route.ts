@@ -8,6 +8,9 @@ import {
   withS3Cleanup,
 } from "@/lib/ops";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 type Ctx = { params: Promise<{ projectId: string }> };
 
 const UUID_RE =
