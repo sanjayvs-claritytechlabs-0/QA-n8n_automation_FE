@@ -131,12 +131,13 @@ That is **not** an env-var naming issue. The GitHub `next.config.ts` has no `out
 Live check (PowerShell):
 
 ```powershell
+(Invoke-WebRequest "https://YOUR-APP.vercel.app/api/ping" -SkipHttpErrorCheck).Content
 (Invoke-WebRequest "https://YOUR-APP.vercel.app/api/health" -SkipHttpErrorCheck).Content
 (Invoke-WebRequest "https://YOUR-APP.vercel.app/api/jobs?limit=1" -SkipHttpErrorCheck).Content
 ```
 
-- **HTML** + `nextExport` → still static. Do the recovery steps below.
-- **JSON** from `/api/health` → serverless works; then fix `N8N_*` if jobs still fail.
+- **HTML** + `nextExport` → still static. Do the recovery steps below (most reliable: **delete & re-import** the Vercel project with Output Directory left untouched).
+- **JSON** from `/api/ping` or `/api/health` → serverless works; then fix `N8N_*` if jobs still fail.
 
 #### Recovery (when the UI settings “look correct” but production is still static)
 

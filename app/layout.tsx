@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 
+/** Keep the app off the pure-static export path on Vercel. */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "QA Automation",
   description: "Start and monitor AI QA jobs",

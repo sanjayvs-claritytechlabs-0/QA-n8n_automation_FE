@@ -1,11 +1,12 @@
 import type { NextConfig } from "next";
 
 /**
- * Never set `output: "export"` or `distDir: "out"`.
- * Route Handlers under `app/api/**` need Vercel’s Next.js serverless
- * runtime. If Vercel Project Settings → Output Directory is `out`,
- * production `/api/*` returns HTML 500 with `nextExport: true`.
+ * Do not set `output: "export"`. This app needs Node serverless Route Handlers.
+ * Also do not set Vercel "Output Directory" (leave empty / override off).
  */
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  // Explicit default — never static-export this app.
+  // (Do not set `output: "export"` or `distDir: "out"`.)
+};
 
 export default nextConfig;
