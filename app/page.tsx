@@ -119,12 +119,14 @@ export default function HomePage() {
 
   return (
     <>
-      <p className="brand">QA Automation</p>
-      <h1>Start a job</h1>
-      <p className="lede">
-        Submit a project against a live site. Status polling and the webhook
-        token stay on the server.
-      </p>
+      <header className="page-header">
+        <p className="eyebrow">New run</p>
+        <h1>Start a job</h1>
+        <p className="lede">
+          Submit a project against a live site. Status polling and the webhook
+          token stay on the server.
+        </p>
+      </header>
 
       <form className="form" onSubmit={onSubmit} noValidate>
         <label>
@@ -153,10 +155,8 @@ export default function HomePage() {
           />
         </label>
 
-        <fieldset style={{ border: "none", margin: 0, padding: 0 }}>
-          <legend style={{ fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.35rem" }}>
-            Mode
-          </legend>
+        <fieldset className="field-group">
+          <legend>Mode</legend>
           <div className="mode-row" role="radiogroup" aria-label="Job mode">
             <label>
               <input
@@ -181,10 +181,8 @@ export default function HomePage() {
           </div>
         </fieldset>
 
-        <fieldset style={{ border: "none", margin: 0, padding: 0 }}>
-          <legend style={{ fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.35rem" }}>
-            AI provider
-          </legend>
+        <fieldset className="field-group">
+          <legend>AI provider</legend>
           <div className="mode-row" role="radiogroup" aria-label="AI provider">
             <label>
               <input

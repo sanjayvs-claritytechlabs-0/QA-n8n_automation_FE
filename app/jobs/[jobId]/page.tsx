@@ -393,7 +393,7 @@ function CaseEditor({
             </div>
           ))}
 
-          <div className="steps-head" style={{ marginTop: "0.75rem" }}>
+          <div className="steps-head">
             <strong>Assertions</strong>
             <button
               type="button"
@@ -541,66 +541,93 @@ export default function JobPage() {
     [artifacts],
   );
 
+  const counts = job?.result_summary?.counts;
+
   return (
     <>
-      <p className="brand">QA Automation</p>
-      <h1>Job status</h1>
+      <header className="page-header">
+        <p className="eyebrow">Job detail</p>
+        <h1>Job status</h1>
+      </header>
 
-      <section className="job-panel" aria-labelledby="job-overview-heading">
-        <h2 id="job-overview-heading" className="section-title">
-          Overview
-        </h2>
-        <div className="meta">
-          <div>
-            Job <code>{jobId}</code>
-          </div>
-          {job?.project_id && (
-            <div>
-              Project <code>{job.project_id}</code>
-            </div>
-          )}
-          {job && (
-            <div style={{ marginTop: "0.75rem" }}>
-              Status{" "}
+      <div className="job-sticky" role="status" aria-live="polite">
+        <div className="job-sticky-row">
+          <div className="job-sticky-meta">
+            {job ? (
               <span className={`status-pill status-${job.status}`}>
                 {job.status}
               </span>
-              {job.current_stage ? (
-                <>
-                  {" "}
-                  · stage <code>{job.current_stage}</code>
-                </>
-              ) : null}
-              {polling ? " · polling…" : null}
-            </div>
-          )}
+            ) : (
+              <span className="status-pill status-pending">loading</span>
+            )}
+            {job?.current_stage ? (
+              <span>
+                Stage <code>{job.current_stage}</code>
+              </span>
+            ) : null}
+            {polling ? <span className="polling-dot">Polling</span> : null}
+          </div>
+          <div className="actions" style={{ marginTop: 0 }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setPolling(true);
+                void load();
+              }}
+            >
+              Refresh
+            </button>
+            <Link href="/" className="btn btn-secondary btn-sm">
+              Home
+            </Link>
+          </div>
         </div>
-
-        {error && (
-          <div className="alert alert-error" role="alert">
-            {error}
+        <div className="job-sticky-meta" style={{ marginTop: "0.55rem" }}>
+          <span>
+            Job <code>{jobId}</code>
+          </span>
+          {job?.project_id ? (
+            <span>
+              Project <code>{job.project_id}</code>
+            </span>
+          ) : null}
+        </div>
+        {counts ? (
+          <div className="job-counts" aria-label="Result counts">
+            <span className="count-chip ok">
+              {counts.passed ?? 0} passed
+            </span>
+            <span className="count-chip fail">
+              {counts.failed ?? 0} failed
+            </span>
+            <span className="count-chip">
+              {counts.error ?? 0} error
+            </span>
+            <span className="count-chip">
+              {counts.skipped ?? 0} skipped
+            </span>
+            {job?.result_summary?.pass_rate != null ? (
+              <span className="count-chip">
+                {(job.result_summary.pass_rate * 100).toFixed(0)}% pass
+              </span>
+            ) : null}
           </div>
-        )}
+        ) : null}
+      </div>
 
-        {job?.error && (
-          <div className="alert alert-error" role="alert">
-            {job.error.code ? <strong>{job.error.code}: </strong> : null}
-            {job.error.message ?? "Job failed"}
-          </div>
-        )}
+      {error && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
+          {error}
+        </div>
+      )}
 
-        {job?.result_summary?.counts && (
-          <p className="meta" style={{ marginBottom: 0 }}>
-            Results: {job.result_summary.counts.passed ?? 0} passed /{" "}
-            {job.result_summary.counts.failed ?? 0} failed /{" "}
-            {job.result_summary.counts.error ?? 0} error /{" "}
-            {job.result_summary.counts.skipped ?? 0} skipped
-            {job.result_summary.pass_rate != null
-              ? ` · pass rate ${(job.result_summary.pass_rate * 100).toFixed(0)}%`
-              : null}
-          </p>
-        )}
-      </section>
+      {job?.error && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
+          {job.error.code ? <strong>{job.error.code}: </strong> : null}
+          {job.error.message ?? "Job failed"}
+        </div>
+      )}
 
       {(job?.report_object_key || job?.report_url || artifacts.length > 0) && (
         <section className="job-panel" aria-labelledby="artifacts-heading">
@@ -636,6 +663,7 @@ export default function JobPage() {
               {screenshots.map((a) => {
                 const href = artifactHref(a, jobId);
                 if (!href) return null;
+                const label = artifactLabel(a);
                 return (
                   <a
                     key={a.id}
@@ -643,11 +671,11 @@ export default function JobPage() {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    title={artifactLabel(a)}
+                    title={label}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={href} alt={artifactLabel(a)} />
-                    <span>{artifactLabel(a)}</span>
+                    <img src={href} alt={`Screenshot: ${label}`} />
+                    <span>{label}</span>
                   </a>
                 );
               })}
@@ -726,22 +754,6 @@ export default function JobPage() {
           </ul>
         </section>
       )}
-
-      <div className="actions">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => {
-            setPolling(true);
-            void load();
-          }}
-        >
-          Refresh now
-        </button>
-        <Link href="/" className="btn btn-secondary" style={{ textDecoration: "none" }}>
-          Home
-        </Link>
-      </div>
 
       {(job?.created_at || job?.finished_at) && (
         <p className="footer-note">
