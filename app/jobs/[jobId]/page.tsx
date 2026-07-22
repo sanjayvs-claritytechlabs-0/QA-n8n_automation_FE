@@ -155,7 +155,7 @@ function CaseEditor({
   );
   const [planText, setPlanText] = useState(() => planToEditorText(row.plan));
   const [tab, setTab] = useState<"plan" | "source">("plan");
-  const [busy, setBusy] = useState<"save" | "rerun" | null>(null);
+  const [busy, setBusy] = useState<"save" | "rerun" | "delete" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [jsonError, setJsonError] = useState<string | null>(null);
 
@@ -168,6 +168,34 @@ function CaseEditor({
     setJsonError(null);
   }, [row.test_plan_id, row.plan]);
 
+  async function deleteCase() {
+    if (!row.test_case_id) return;
+    const ok = window.confirm(
+      `Delete case "${row.title}"?\n\nRemoves related plans, results, and linked S3 artifacts.`,
+    );
+    if (!ok) return;
+    setBusy("delete");
+    setMsg(null);
+    try {
+      const res = await fetch(
+        `/api/jobs/${encodeURIComponent(jobId)}/cases/${encodeURIComponent(row.test_case_id)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setMsg(
+          data?.error?.message || data?.error?.code || `Delete failed (${res.status})`,
+        );
+        return;
+      }
+      onSaved();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!row.test_plan_id) {
     return (
       <li className="case-row">
@@ -175,6 +203,19 @@ function CaseEditor({
           <span className="case-title">{row.title || "Untitled"}</span>
           <span className="meta">no plan</span>
         </div>
+        {row.test_case_id ? (
+          <div className="actions" style={{ marginTop: "0.5rem" }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={busy !== null}
+              onClick={() => void deleteCase()}
+            >
+              {busy === "delete" ? "Deleting…" : "Delete case"}
+            </button>
+          </div>
+        ) : null}
+        {msg ? <p className="footer-note">{msg}</p> : null}
       </li>
     );
   }
@@ -384,6 +425,16 @@ function CaseEditor({
             >
               {busy === "rerun" ? "Re-running…" : "Re-run this case"}
             </button>
+            {row.test_case_id ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy !== null}
+                onClick={() => void deleteCase()}
+              >
+                {busy === "delete" ? "Deleting…" : "Delete case"}
+              </button>
+            ) : null}
           </div>
           {msg ? <p className="footer-note">{msg}</p> : null}
         </div>
@@ -398,6 +449,15 @@ export default function JobPage() {
   const [job, setJob] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [polling, setPolling] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newSteps, setNewSteps] = useState("");
+  const [newExpected, setNewExpected] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [opsNote, setOpsNote] = useState<string | null>(null);
+  const [opsBusy, setOpsBusy] = useState<"rerun-job" | "delete-job" | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     try {
@@ -435,17 +495,105 @@ export default function JobPage() {
   const cases = useMemo(() => job?.cases ?? [], [job?.cases]);
   const locators = useMemo(() => job?.locators ?? [], [job?.locators]);
   const artifacts = useMemo(() => job?.artifacts ?? [], [job?.artifacts]);
-  const showCases = cases.length > 0;
+  const showCases = cases.length > 0 || createOpen;
   const screenshots = useMemo(
     () => artifacts.filter((a) => a.kind === "screenshot"),
     [artifacts],
   );
+  const videos = useMemo(
+    () => artifacts.filter((a) => a.kind === "video"),
+    [artifacts],
+  );
   const otherArtifacts = useMemo(
-    () => artifacts.filter((a) => a.kind !== "screenshot"),
+    () =>
+      artifacts.filter((a) => a.kind !== "screenshot" && a.kind !== "video"),
     [artifacts],
   );
 
   const counts = job?.result_summary?.counts;
+
+  async function createCase() {
+    setCreateBusy(true);
+    setOpsNote(null);
+    try {
+      const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTitle,
+          steps: newSteps,
+          expected: newExpected || undefined,
+          create_plan_stub: true,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setOpsNote(data?.error?.message || `Create failed (${res.status})`);
+        return;
+      }
+      setNewTitle("");
+      setNewSteps("");
+      setNewExpected("");
+      setCreateOpen(false);
+      setOpsNote("Case created (blocked plan stub). Edit plan JSON to map locators.");
+      await load();
+    } catch (e) {
+      setOpsNote(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
+  async function rerunJob() {
+    const ok = window.confirm(
+      "Re-run clones a NEW job under the same project and starts the pipeline. This job stays in history.",
+    );
+    if (!ok) return;
+    setOpsBusy("rerun-job");
+    setOpsNote(null);
+    try {
+      const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/rerun`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok || !data.job_id) {
+        setOpsNote(data?.error?.message || `Re-run failed (${res.status})`);
+        return;
+      }
+      window.location.href = `/jobs/${data.job_id}`;
+    } catch (e) {
+      setOpsNote(e instanceof Error ? e.message : "Re-run failed");
+    } finally {
+      setOpsBusy(null);
+    }
+  }
+
+  async function deleteJob() {
+    const ok = window.confirm(
+      "Delete this job and its S3 prefix? This cannot be undone.",
+    );
+    if (!ok) return;
+    setOpsBusy("delete-job");
+    setOpsNote(null);
+    try {
+      const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setOpsNote(data?.error?.message || `Delete failed (${res.status})`);
+        return;
+      }
+      const dest = job?.project_id
+        ? `/projects/${job.project_id}`
+        : "/projects";
+      window.location.href = dest;
+    } catch (e) {
+      setOpsNote(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setOpsBusy(null);
+    }
+  }
 
   return (
     <>
@@ -482,9 +630,34 @@ export default function JobPage() {
             >
               Refresh
             </button>
-            <Link href="/" className="btn btn-secondary btn-sm">
-              Home
-            </Link>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={opsBusy !== null}
+              onClick={() => void rerunJob()}
+            >
+              {opsBusy === "rerun-job" ? "Cloning…" : "Re-run job"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={opsBusy !== null}
+              onClick={() => void deleteJob()}
+            >
+              {opsBusy === "delete-job" ? "Deleting…" : "Delete job"}
+            </button>
+            {job?.project_id ? (
+              <Link
+                href={`/projects/${encodeURIComponent(job.project_id)}`}
+                className="btn btn-secondary btn-sm"
+              >
+                Project
+              </Link>
+            ) : (
+              <Link href="/projects" className="btn btn-secondary btn-sm">
+                Projects
+              </Link>
+            )}
           </div>
         </div>
         <div className="job-sticky-meta" style={{ marginTop: "0.55rem" }}>
@@ -519,6 +692,8 @@ export default function JobPage() {
           </div>
         ) : null}
       </div>
+
+      {opsNote ? <p className="footer-note">{opsNote}</p> : null}
 
       {error && (
         <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
@@ -563,46 +738,80 @@ export default function JobPage() {
             </p>
           )}
           {screenshots.length > 0 && (
-            <div className="artifact-thumbs">
-              {screenshots.map((a) => {
-                const href = artifactHref(a, jobId);
-                if (!href) return null;
-                const label = artifactLabel(a);
-                return (
-                  <a
-                    key={a.id}
-                    className="artifact-thumb"
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={label}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={href} alt={`Screenshot: ${label}`} />
-                    <span>{label}</span>
-                  </a>
-                );
-              })}
-            </div>
+            <>
+              <h3 className="section-title" style={{ fontSize: "0.95rem" }}>
+                Screenshots
+              </h3>
+              <div className="artifact-thumbs">
+                {screenshots.map((a) => {
+                  const href = artifactHref(a, jobId);
+                  if (!href) return null;
+                  const label = artifactLabel(a);
+                  return (
+                    <a
+                      key={a.id}
+                      className="artifact-thumb"
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={label}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={href} alt={`Screenshot: ${label}`} />
+                      <span>{label}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {videos.length > 0 && (
+            <>
+              <h3 className="section-title" style={{ fontSize: "0.95rem" }}>
+                Videos
+              </h3>
+              <ul className="artifact-list">
+                {videos.map((a) => {
+                  const href = artifactHref(a, jobId);
+                  return (
+                    <li key={a.id}>
+                      <span className="artifact-kind">video</span>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer">
+                          {artifactLabel(a)}
+                        </a>
+                      ) : (
+                        <span>{artifactLabel(a)}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
           {otherArtifacts.length > 0 && (
-            <ul className="artifact-list">
-              {otherArtifacts.map((a) => {
-                const href = artifactHref(a, jobId);
-                return (
-                  <li key={a.id}>
-                    <span className="artifact-kind">{a.kind}</span>
-                    {href ? (
-                      <a href={href} target="_blank" rel="noopener noreferrer">
-                        {artifactLabel(a)}
-                      </a>
-                    ) : (
-                      <span>{artifactLabel(a)}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+            <>
+              <h3 className="section-title" style={{ fontSize: "0.95rem" }}>
+                Other
+              </h3>
+              <ul className="artifact-list">
+                {otherArtifacts.map((a) => {
+                  const href = artifactHref(a, jobId);
+                  return (
+                    <li key={a.id}>
+                      <span className="artifact-kind">{a.kind}</span>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer">
+                          {artifactLabel(a)}
+                        </a>
+                      ) : (
+                        <span>{artifactLabel(a)}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
           {!job?.report_object_key &&
             !job?.report_url &&
@@ -636,16 +845,69 @@ export default function JobPage() {
         </section>
       )}
 
-      {showCases && (
-        <section className="job-panel" aria-labelledby="cases-heading">
+      <section className="job-panel" aria-labelledby="cases-heading">
+        <div className="jobs-head">
           <h2 id="cases-heading" className="section-title">
             Cases (structured plan editor)
           </h2>
-          <p className="meta" style={{ marginBottom: "0.75rem" }}>
-            Edit structured plan JSON (locator UUIDs only), save, then re-run.
-            Optional Playwright source is review-only — execution ignores it in
-            v1.
-          </p>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setCreateOpen((v) => !v)}
+          >
+            {createOpen ? "Cancel" : "Add case"}
+          </button>
+        </div>
+        <p className="meta" style={{ marginBottom: "0.75rem" }}>
+          Edit structured plan JSON (locator UUIDs only), save, then re-run this
+          case. Optional Playwright source is review-only — execution ignores it
+          in v1.
+        </p>
+
+        {createOpen ? (
+          <form
+            className="form"
+            style={{ marginBottom: "1rem" }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void createCase();
+            }}
+          >
+            <label>
+              Title
+              <input
+                required
+                maxLength={500}
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Manual smoke — Learn more"
+              />
+            </label>
+            <label>
+              Steps
+              <span className="hint">One per line, or pipe-separated</span>
+              <textarea
+                value={newSteps}
+                onChange={(e) => setNewSteps(e.target.value)}
+                rows={4}
+                placeholder={"1. Open home\n2. Click Learn more"}
+              />
+            </label>
+            <label>
+              Expected
+              <input
+                value={newExpected}
+                onChange={(e) => setNewExpected(e.target.value)}
+                placeholder="Learn more link works"
+              />
+            </label>
+            <button type="submit" disabled={createBusy || !newTitle.trim()}>
+              {createBusy ? "Creating…" : "Create case + plan stub"}
+            </button>
+          </form>
+        ) : null}
+
+        {showCases && cases.length > 0 ? (
           <ul className="cases">
             {cases.map((c) => (
               <CaseEditor
@@ -657,8 +919,10 @@ export default function JobPage() {
               />
             ))}
           </ul>
-        </section>
-      )}
+        ) : !createOpen ? (
+          <p className="meta">No cases yet.</p>
+        ) : null}
+      </section>
 
       {(job?.created_at || job?.finished_at) && (
         <p className="footer-note">

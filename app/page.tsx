@@ -123,8 +123,9 @@ export default function HomePage() {
         <p className="eyebrow">New run</p>
         <h1>Start a job</h1>
         <p className="lede">
-          Submit a project against a live site. Status polling and the webhook
-          token stay on the server.
+          Submit a project against a live site. Browse{" "}
+          <Link href="/projects">Projects</Link> for list/delete/re-run. Status
+          polling and the webhook token stay on the server.
         </p>
       </header>
 

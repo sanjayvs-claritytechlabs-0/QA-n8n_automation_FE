@@ -28,8 +28,12 @@ export default function RootLayout({
         <header className="app-header">
           <Link href="/" className="brand-link">
             <span className="brand-name">QA Automation</span>
-            <span className="brand-tag">Jobs</span>
+            <span className="brand-tag">Ops</span>
           </Link>
+          <nav className="app-nav" aria-label="Primary">
+            <Link href="/">New job</Link>
+            <Link href="/projects">Projects</Link>
+          </nav>
         </header>
         <div className="shell">{children}</div>
       </body>
