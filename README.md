@@ -107,16 +107,29 @@ Open http://localhost:3000
 
 ## Vercel deploy
 
-1. Create a new git repo from this `Frontend/` folder (or push this folder as the repo root).
-2. Import the repo in [Vercel](https://vercel.com) → Framework Preset: **Next.js** (not “Other” / static).
-3. **Do not** set Output Directory to `out` (that forces static export — `/api/*` then returns HTML 500 with `nextExport: true`).
-4. Leave Build Command as default (`next build`). Repo includes `vercel.json` with `framework: nextjs`.
-5. Add the env vars above (Production + Preview as needed): at minimum `N8N_BASE_URL`, `QA_WEBHOOK_TOKEN`, `PLAYWRIGHT_SERVICE_URL`, `S3_BUCKET`, plus S3 storage vars for reports.
-6. Deploy / Redeploy.
+This app **must** run as a normal Next.js app (Node serverless). Static export breaks every `/api/*` route.
 
-Optional: set Root Directory to `Frontend` if you keep this folder inside a monorepo instead of splitting the git root.
+1. Repo root = this `Frontend/` folder (or set **Root Directory** to `Frontend` in a monorepo).
+2. [Vercel](https://vercel.com) → Project → **Settings → Build & Development Settings**:
+   - **Framework Preset:** `Next.js` (not Other / Vite / static)
+   - **Build Command:** `next build` (or leave default)
+   - **Output Directory:** leave **empty** and turn **Override OFF**  
+     If this is `out`, `.next`, or anything else → you get HTML 500s with `"nextExport":true` on `/api/jobs`
+   - **Install Command:** `npm install`
+3. **Settings → Environment Variables** (Production): `N8N_BASE_URL`, `QA_WEBHOOK_TOKEN`, `PLAYWRIGHT_SERVICE_URL`, `S3_BUCKET`, plus `N8N_EXTERNAL_STORAGE_S3_*` for reports/deletes.
+4. **Deployments → … → Redeploy** (or push a new commit). After deploy opens, confirm the build lists **Serverless Functions** / Route Handlers (e.g. `/api/jobs`). Zero functions = still static.
 
-If Recent Jobs / Projects show opaque `… (500)`: open the Network tab for `/api/jobs` or `/api/projects`. HTML body with `nextExport` means serverless Route Handlers are not running — fix the Vercel settings above and redeploy.
+### Still seeing “API routes are not running”?
+
+Live check (PowerShell):
+
+```powershell
+(Invoke-WebRequest "https://YOUR-APP.vercel.app/api/jobs?limit=1" -SkipHttpErrorCheck).Content
+```
+
+- If the body is **HTML** and contains `nextExport` → Vercel is still static. Fix Output Directory / Framework, then **Redeploy** (S3 env names will not fix this).
+- If the body is **JSON** `{ "ok": true, ... }` → API works; refresh the UI.
+- If JSON `{ "ok": false, "error": { "code": "CONFIG_ERROR", ... } }` → add missing `N8N_BASE_URL` / `QA_WEBHOOK_TOKEN` and redeploy.
 
 ## Smoke-test against live n8n
 

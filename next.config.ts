@@ -1,13 +1,11 @@
 import type { NextConfig } from "next";
 
 /**
- * Do NOT set `output: "export"`.
- * This app relies on App Router Route Handlers under `/api/**`
- * (n8n proxy + S3). Static export makes those return HTML 500s
- * (`nextExport: true`) — which is what broke jobs/projects on Vercel.
+ * Never set `output: "export"` or `distDir: "out"`.
+ * Route Handlers under `app/api/**` need Vercel’s Next.js serverless
+ * runtime. If Vercel Project Settings → Output Directory is `out`,
+ * production `/api/*` returns HTML 500 with `nextExport: true`.
  */
-const nextConfig: NextConfig = {
-  // Keep default Node serverless output for Vercel.
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;
