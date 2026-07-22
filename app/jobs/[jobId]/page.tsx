@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CodeEditor,
+  formatPlanJson,
+  parsePlanDocument,
+  planToEditorText,
+} from "../../../components/PlanJsonEditor";
 
 type Stage = {
   stage_key: string;
@@ -21,6 +27,7 @@ type PlanStep = {
   locator_id?: string | null;
   value?: string | null;
   status?: string | null;
+  gap_reason?: string | null;
 };
 
 type PlanAssertion = {
@@ -41,6 +48,7 @@ type CaseRow = {
     steps?: PlanStep[];
     assertions?: PlanAssertion[];
   };
+  playwright_source?: string | null;
   execution_result_id?: string | null;
   status?: string | null;
   duration_ms?: number | null;
@@ -125,17 +133,6 @@ function artifactLabel(a: ArtifactRow): string {
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 const POLL_MS = 4000;
-const ACTIONS = [
-  "goto",
-  "fill",
-  "click",
-  "check",
-  "uncheck",
-  "select",
-  "press",
-  "wait",
-  "assert",
-] as const;
 
 function locatorLabel(l: LocatorOpt): string {
   const name = l.name || l.accessible_name || l.role || "locator";
@@ -156,28 +153,19 @@ function CaseEditor({
   const [open, setOpen] = useState(
     () => row.status === "failed" || row.status === "error",
   );
-  const [summary, setSummary] = useState(row.plan?.summary ?? "");
-  const [steps, setSteps] = useState<PlanStep[]>(() =>
-    Array.isArray(row.plan?.steps) ? row.plan!.steps!.map((s) => ({ ...s })) : [],
-  );
-  const [assertions, setAssertions] = useState<PlanAssertion[]>(() =>
-    Array.isArray(row.plan?.assertions)
-      ? row.plan!.assertions!.map((a) => ({ ...a }))
-      : [],
-  );
+  const [planText, setPlanText] = useState(() => planToEditorText(row.plan));
+  const [tab, setTab] = useState<"plan" | "source">("plan");
   const [busy, setBusy] = useState<"save" | "rerun" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  const hasSource =
+    typeof row.playwright_source === "string" &&
+    row.playwright_source.trim().length > 0;
 
   useEffect(() => {
-    setSummary(row.plan?.summary ?? "");
-    setSteps(
-      Array.isArray(row.plan?.steps) ? row.plan!.steps!.map((s) => ({ ...s })) : [],
-    );
-    setAssertions(
-      Array.isArray(row.plan?.assertions)
-        ? row.plan!.assertions!.map((a) => ({ ...a }))
-        : [],
-    );
+    setPlanText(planToEditorText(row.plan));
+    setJsonError(null);
   }, [row.test_plan_id, row.plan]);
 
   if (!row.test_plan_id) {
@@ -193,32 +181,35 @@ function CaseEditor({
 
   const planId = row.test_plan_id;
 
+  function formatJson() {
+    const r = formatPlanJson(planText);
+    if (!r.ok) {
+      setJsonError(r.error);
+      setMsg(null);
+      return;
+    }
+    setPlanText(r.text);
+    setJsonError(null);
+    setMsg("Formatted");
+  }
+
   async function save() {
     setBusy("save");
     setMsg(null);
+    const parsed = parsePlanDocument(planText);
+    if (!parsed.ok) {
+      setJsonError(parsed.error);
+      setBusy(null);
+      return;
+    }
+    setJsonError(null);
     try {
       const res = await fetch(
         `/api/jobs/${encodeURIComponent(jobId)}/plans/${encodeURIComponent(planId)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            plan: {
-              summary,
-              steps: steps.map((s, i) => ({
-                ordinal: i + 1,
-                action: s.action || "assert",
-                description: s.description ?? null,
-                locator_id: s.locator_id || null,
-                value: s.value ?? null,
-              })),
-              assertions: assertions.map((a) => ({
-                type: a.type || "assert",
-                expected: a.expected ?? null,
-                locator_id: a.locator_id || null,
-              })),
-            },
-          }),
+          body: JSON.stringify({ plan: parsed.plan }),
         },
       );
       const data = await res.json().catch(() => null);
@@ -270,9 +261,7 @@ function CaseEditor({
         aria-expanded={open}
       >
         <span className="case-title">{row.title || "Untitled"}</span>
-        <span
-          className={`status-pill status-${row.status || "pending"}`}
-        >
+        <span className={`status-pill status-${row.status || "pending"}`}>
           {row.status || "no result"}
         </span>
       </button>
@@ -281,193 +270,108 @@ function CaseEditor({
       ) : null}
       {open && (
         <div className="case-editor">
-          <label className="field">
-            <span>Summary</span>
-            <input
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              disabled={busy !== null}
-            />
-          </label>
+          <p className="meta case-editor-hint">
+            Edit the <strong>structured plan JSON</strong> (steps, assertions,
+            locator UUIDs). Execution runs this plan — not Playwright scripts.
+          </p>
 
-          <div className="steps-head">
-            <strong>Steps</strong>
+          <div className="editor-tabs" role="tablist">
             <button
               type="button"
-              className="btn btn-secondary btn-sm"
-              disabled={busy !== null}
-              onClick={() =>
-                setSteps((prev) => [
-                  ...prev,
-                  { action: "click", description: "", locator_id: null, value: null },
-                ])
-              }
+              role="tab"
+              aria-selected={tab === "plan"}
+              className={`editor-tab${tab === "plan" ? " active" : ""}`}
+              onClick={() => setTab("plan")}
             >
-              Add step
+              Plan JSON
             </button>
+            {hasSource ? (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "source"}
+                className={`editor-tab${tab === "source" ? " active" : ""}`}
+                onClick={() => setTab("source")}
+              >
+                Playwright source (read-only)
+              </button>
+            ) : null}
           </div>
 
-          {steps.map((st, idx) => (
-            <div key={idx} className="step-row">
-              <span className="step-ord">{idx + 1}</span>
-              <select
-                value={st.action || "click"}
+          {tab === "plan" ? (
+            <>
+              <div className="steps-head">
+                <strong>Structured plan</strong>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={busy !== null}
+                  onClick={() => formatJson()}
+                >
+                  Format JSON
+                </button>
+              </div>
+              <CodeEditor
+                value={planText}
+                onChange={setPlanText}
                 disabled={busy !== null}
-                onChange={(e) => {
-                  const action = e.target.value;
-                  setSteps((prev) =>
-                    prev.map((p, i) => (i === idx ? { ...p, action } : p)),
-                  );
-                }}
-              >
-                {ACTIONS.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder="description"
-                value={st.description ?? ""}
-                disabled={busy !== null}
-                onChange={(e) => {
-                  const description = e.target.value;
-                  setSteps((prev) =>
-                    prev.map((p, i) => (i === idx ? { ...p, description } : p)),
-                  );
-                }}
+                height="320px"
+                language="json"
               />
-              <select
-                value={st.locator_id ?? ""}
-                disabled={busy !== null}
-                onChange={(e) => {
-                  const locator_id = e.target.value || null;
-                  setSteps((prev) =>
-                    prev.map((p, i) => (i === idx ? { ...p, locator_id } : p)),
-                  );
-                }}
-              >
-                <option value="">(no locator)</option>
-                {locators.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {locatorLabel(l)}
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder="value"
-                value={st.value ?? ""}
-                disabled={busy !== null}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setSteps((prev) =>
-                    prev.map((p, i) => (i === idx ? { ...p, value } : p)),
-                  );
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={busy !== null || idx === 0}
-                onClick={() =>
-                  setSteps((prev) => {
-                    if (idx === 0) return prev;
-                    const next = [...prev];
-                    const t = next[idx - 1];
-                    next[idx - 1] = next[idx];
-                    next[idx] = t;
-                    return next;
-                  })
-                }
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={busy !== null}
-                onClick={() => setSteps((prev) => prev.filter((_, i) => i !== idx))}
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+              {jsonError ? (
+                <p className="case-error" role="alert">
+                  {jsonError}
+                </p>
+              ) : null}
 
-          <div className="steps-head">
-            <strong>Assertions</strong>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              disabled={busy !== null}
-              onClick={() =>
-                setAssertions((prev) => [
-                  ...prev,
-                  { type: "url_contains", expected: "", locator_id: null },
-                ])
-              }
-            >
-              Add assertion
-            </button>
-          </div>
-          {assertions.map((a, idx) => (
-            <div key={idx} className="step-row">
-              <input
-                placeholder="type"
-                value={a.type ?? ""}
-                disabled={busy !== null}
-                onChange={(e) => {
-                  const type = e.target.value;
-                  setAssertions((prev) =>
-                    prev.map((p, i) => (i === idx ? { ...p, type } : p)),
-                  );
-                }}
+              {locators.length > 0 ? (
+                <label className="field">
+                  <span>Locator catalog (copy UUID into plan JSON)</span>
+                  <select
+                    defaultValue=""
+                    disabled={busy !== null}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (!id) return;
+                      void navigator.clipboard?.writeText(id).then(
+                        () => setMsg(`Copied locator ${id.slice(0, 8)}…`),
+                        () => setMsg(`Locator id: ${id}`),
+                      );
+                      e.target.value = "";
+                    }}
+                  >
+                    <option value="">Select to copy locator_id…</option>
+                    {locators.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {locatorLabel(l)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="meta case-editor-hint">
+                Optional review/export artifact only.{" "}
+                <strong>v1 execution ignores this source</strong> and uses the
+                structured plan above.
+              </p>
+              <CodeEditor
+                value={row.playwright_source || ""}
+                onChange={() => undefined}
+                readOnly
+                height="280px"
+                language="typescript"
               />
-              <input
-                placeholder="expected"
-                value={a.expected ?? ""}
-                disabled={busy !== null}
-                onChange={(e) => {
-                  const expected = e.target.value;
-                  setAssertions((prev) =>
-                    prev.map((p, i) => (i === idx ? { ...p, expected } : p)),
-                  );
-                }}
-              />
-              <select
-                value={a.locator_id ?? ""}
-                disabled={busy !== null}
-                onChange={(e) => {
-                  const locator_id = e.target.value || null;
-                  setAssertions((prev) =>
-                    prev.map((p, i) => (i === idx ? { ...p, locator_id } : p)),
-                  );
-                }}
-              >
-                <option value="">(no locator)</option>
-                {locators.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {locatorLabel(l)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={busy !== null}
-                onClick={() =>
-                  setAssertions((prev) => prev.filter((_, i) => i !== idx))
-                }
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+            </>
+          )}
 
           <div className="actions" style={{ marginTop: "0.75rem" }}>
             <button
               type="button"
               className="btn"
-              disabled={busy !== null}
+              disabled={busy !== null || tab !== "plan"}
               onClick={() => void save()}
             >
               {busy === "save" ? "Saving…" : "Save plan"}
@@ -735,11 +639,12 @@ export default function JobPage() {
       {showCases && (
         <section className="job-panel" aria-labelledby="cases-heading">
           <h2 id="cases-heading" className="section-title">
-            Cases (edit plan + re-run)
+            Cases (structured plan editor)
           </h2>
           <p className="meta" style={{ marginBottom: "0.75rem" }}>
-            Edit structured steps and locators, save, then re-run one case. Does not
-            rewrite Playwright source.
+            Edit structured plan JSON (locator UUIDs only), save, then re-run.
+            Optional Playwright source is review-only — execution ignores it in
+            v1.
           </p>
           <ul className="cases">
             {cases.map((c) => (

@@ -19,7 +19,7 @@ Minimal Next.js (App Router) UI that starts QA jobs and polls status via **serve
 | Home form → start job | `POST /api/jobs` → `POST {N8N_BASE_URL}/webhook/qa/create-or-start` |
 | Home recent jobs table | `GET /api/jobs?limit=50` → `GET …/webhook/qa/jobs?limit=` |
 | `/jobs/[jobId]` polls every 4s | `GET /api/jobs/[jobId]` → `GET …/webhook/qa/job-status?job_id=` |
-| Save structured plan | `POST /api/jobs/[jobId]/plans/[planId]` → `POST …/webhook/qa/plans/update` |
+| Save structured plan JSON | `POST /api/jobs/[jobId]/plans/[planId]` → `POST …/webhook/qa/plans/update` |
 | Re-run one case | `POST /api/jobs/[jobId]/cases/[planId]/rerun` → `POST …/webhook/qa/cases/re-run` |
 | Open HTML report | `GET /api/jobs/[jobId]/report` → poll + private S3 GetObject (rewrites `s3://` imgs) |
 | Raw artifact | `GET /api/artifacts?key=qa/...` → private S3 GetObject |
@@ -37,9 +37,21 @@ Still injected from server env only (not the form):
 
 - `playwright_service_url` ← `PLAYWRIGHT_SERVICE_URL`
 - `s3_bucket` ← `S3_BUCKET`
+- `capture_screenshot_on_failure: true` + `capture_video: true` (every executed case; opt out with `CAPTURE_SCREENSHOT=false` / `CAPTURE_VIDEO=false`)
 - optional `browser`, `artifact_base_url`
 
 AI API keys are **never** sent from this app (n8n Gemini/OpenAI credentials own them).
+
+Optional server env (injected into Create-or-Start `options`):
+
+| Variable | Effect |
+|----------|--------|
+| `AI_GENERATE_PLAYWRIGHT_SOURCE=true` | Store review-only Playwright source on plans |
+| `CAPTURE_DISCOVERY_SNAPSHOTS=true` | Discovery HTML + screenshots to S3 (keep crawl small) |
+| `CAPTURE_VIDEO=false` | Disable per-case video (default is on) |
+| `CAPTURE_SCREENSHOT=false` | Disable per-case screenshots (default is on for pass + fail) |
+
+Job detail **Cases** uses a Monaco JSON editor for the structured plan (`steps` / `assertions` / `summary`). Optional `playwright_source` is shown read-only — v1 execution ignores it.
 
 ## Local setup
 
@@ -90,7 +102,7 @@ Optional: set Root Directory to `Frontend` if you keep this folder inside a mono
 3. `npm run dev` → open home page (crawl depth/pages + recent jobs table).
 4. Start an **AI QA** job against `https://example.com` (or Manual/CSV with a case that matches the site — see `n8n/README.md` E2E notes).
 5. You should land on `/jobs/<uuid>` with stages updating; terminal `succeeded` / `failed`; **Artifacts** shows screenshots + report links via `/api/artifacts` / `/api/jobs/<uuid>/report`.
-6. After execution, expand a failed/error case → edit steps/locators → **Save plan** → **Re-run this case**. Requires Plans Update + Cases Re-run webhooks published, and SQL `003_execution_results_job_case_unique.sql` applied once.
+6. After execution, expand a case → edit **Plan JSON** (locator UUIDs) → **Save plan** → **Re-run this case**. Requires Plans Update + Cases Re-run webhooks published, and SQL `003_execution_results_job_case_unique.sql` applied once. Artifacts should include a screenshot (and video when capture is on) per executed case.
 
 Direct BE check (token only in your shell, not in FE):
 

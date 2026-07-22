@@ -82,9 +82,25 @@ export function defaultJobOptions(
       defaultModelFor(provider),
     crawl_max_depth,
     crawl_max_pages,
+    // Always-on media for every executed case (opt out via env)
+    capture_screenshot_on_failure: true,
+    capture_video: true,
   };
   const artifactBase = env("ARTIFACT_BASE_URL");
   if (artifactBase) options.artifact_base_url = artifactBase.replace(/\/$/, "");
+
+  if ((env("AI_GENERATE_PLAYWRIGHT_SOURCE") || "").toLowerCase() === "true") {
+    options.ai_generate_playwright_source = true;
+  }
+  if ((env("CAPTURE_DISCOVERY_SNAPSHOTS") || "").toLowerCase() === "true") {
+    options.capture_discovery_snapshots = true;
+  }
+  if ((env("CAPTURE_VIDEO") || "true").toLowerCase() === "false") {
+    options.capture_video = false;
+  }
+  if ((env("CAPTURE_SCREENSHOT") || "true").toLowerCase() === "false") {
+    options.capture_screenshot_on_failure = false;
+  }
   return options;
 }
 
