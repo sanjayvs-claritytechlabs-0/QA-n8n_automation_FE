@@ -17,6 +17,7 @@ Minimal Next.js (App Router) UI that starts QA jobs and polls status via **serve
 | UI | Server proxy |
 |----|----------------|
 | Home form → start job | `POST /api/jobs` → `POST {N8N_BASE_URL}/webhook/qa/create-or-start` |
+| Home recent jobs table | `GET /api/jobs?limit=50` → `GET …/webhook/qa/jobs?limit=` |
 | `/jobs/[jobId]` polls every 4s | `GET /api/jobs/[jobId]` → `GET …/webhook/qa/job-status?job_id=` |
 | Save structured plan | `POST /api/jobs/[jobId]/plans/[planId]` → `POST …/webhook/qa/plans/update` |
 | Re-run one case | `POST /api/jobs/[jobId]/cases/[planId]/rerun` → `POST …/webhook/qa/cases/re-run` |
@@ -27,13 +28,18 @@ Auth header `X-QA-Token` is attached **only** in Route Handlers from `QA_WEBHOOK
 
 S3 credentials stay **server-side** (`N8N_EXTERNAL_STORAGE_S3_*`). The browser only hits FE `/api/...` routes.
 
-Injected into Create-or-Start `options` from env (form stays simple):
+Start-form fields (sent in Create-or-Start `options`):
+
+- `mode`, `ai_provider`, `ai_model`
+- `crawl_max_depth`, `crawl_max_pages` (UI; env `CRAWL_MAX_*` = defaults only)
+
+Still injected from server env only (not the form):
 
 - `playwright_service_url` ← `PLAYWRIGHT_SERVICE_URL`
 - `s3_bucket` ← `S3_BUCKET`
-- optional `ai_model`, crawl caps, `browser`, `artifact_base_url`
+- optional `browser`, `artifact_base_url`
 
-OpenAI keys are **never** sent from this app (n8n credential owns them).
+AI API keys are **never** sent from this app (n8n Gemini/OpenAI credentials own them).
 
 ## Local setup
 
@@ -79,11 +85,11 @@ Optional: set Root Directory to `Frontend` if you keep this folder inside a mono
 
 ## Smoke-test against live n8n
 
-1. Confirm n8n Create-or-Start + Job Status Poll workflows are **published**.
+1. Confirm n8n Create-or-Start + Job Status Poll + **Jobs List** workflows are **published**.
 2. Set `QA_WEBHOOK_TOKEN` to the live webhook secret.
-3. `npm run dev` → open home page.
+3. `npm run dev` → open home page (crawl depth/pages + recent jobs table).
 4. Start an **AI QA** job against `https://example.com` (or Manual/CSV with a case that matches the site — see `n8n/README.md` E2E notes).
-5. You should land on `/jobs/<uuid>` with stages updating; terminal `succeeded` / `failed`; **Open HTML report** goes to `/api/jobs/<uuid>/report` (private S3 via server credentials).
+5. You should land on `/jobs/<uuid>` with stages updating; terminal `succeeded` / `failed`; **Artifacts** shows screenshots + report links via `/api/artifacts` / `/api/jobs/<uuid>/report`.
 6. After execution, expand a failed/error case → edit steps/locators → **Save plan** → **Re-run this case**. Requires Plans Update + Cases Re-run webhooks published, and SQL `003_execution_results_job_case_unique.sql` applied once.
 
 Direct BE check (token only in your shell, not in FE):

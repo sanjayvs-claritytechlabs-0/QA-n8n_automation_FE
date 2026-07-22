@@ -56,6 +56,18 @@ type LocatorOpt = {
   accessible_name?: string | null;
 };
 
+type ArtifactRow = {
+  id: string;
+  kind: string;
+  object_key?: string | null;
+  url?: string | null;
+  content_type?: string | null;
+  bytes?: number | null;
+  meta?: Record<string, unknown> | null;
+  execution_result_id?: string | null;
+  created_at?: string | null;
+};
+
 type JobStatus = {
   ok: boolean;
   job_id: string;
@@ -65,6 +77,7 @@ type JobStatus = {
   stages?: Stage[];
   cases?: CaseRow[];
   locators?: LocatorOpt[];
+  artifacts?: ArtifactRow[];
   report_url?: string | null;
   report_object_key?: string | null;
   report_json_object_key?: string | null;
@@ -82,6 +95,33 @@ type JobStatus = {
   finished_at?: string | null;
   created_at?: string | null;
 };
+
+function artifactHref(a: ArtifactRow, jobId: string): string | null {
+  const format =
+    a.meta && typeof a.meta.format === "string" ? a.meta.format : null;
+  if (a.kind === "report" && format === "html") {
+    return `/api/jobs/${encodeURIComponent(jobId)}/report`;
+  }
+  if (a.object_key) {
+    return `/api/artifacts?key=${encodeURIComponent(a.object_key)}`;
+  }
+  if (a.url?.startsWith("s3://")) {
+    return `/api/artifacts?url=${encodeURIComponent(a.url)}`;
+  }
+  if (a.url?.startsWith("http://") || a.url?.startsWith("https://")) {
+    return a.url;
+  }
+  return null;
+}
+
+function artifactLabel(a: ArtifactRow): string {
+  const format =
+    a.meta && typeof a.meta.format === "string" ? a.meta.format : null;
+  if (a.kind === "report" && format) return `report.${format}`;
+  const key = a.object_key || "";
+  const base = key.split("/").pop();
+  return base || a.kind || "artifact";
+}
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 const POLL_MS = 4000;
@@ -490,92 +530,161 @@ export default function JobPage() {
 
   const cases = useMemo(() => job?.cases ?? [], [job?.cases]);
   const locators = useMemo(() => job?.locators ?? [], [job?.locators]);
+  const artifacts = useMemo(() => job?.artifacts ?? [], [job?.artifacts]);
   const showCases = cases.length > 0;
+  const screenshots = useMemo(
+    () => artifacts.filter((a) => a.kind === "screenshot"),
+    [artifacts],
+  );
+  const otherArtifacts = useMemo(
+    () => artifacts.filter((a) => a.kind !== "screenshot"),
+    [artifacts],
+  );
 
   return (
     <>
       <p className="brand">QA Automation</p>
       <h1>Job status</h1>
 
-      <div className="meta">
-        <div>
-          Job <code>{jobId}</code>
-        </div>
-        {job?.project_id && (
+      <section className="job-panel" aria-labelledby="job-overview-heading">
+        <h2 id="job-overview-heading" className="section-title">
+          Overview
+        </h2>
+        <div className="meta">
           <div>
-            Project <code>{job.project_id}</code>
+            Job <code>{jobId}</code>
+          </div>
+          {job?.project_id && (
+            <div>
+              Project <code>{job.project_id}</code>
+            </div>
+          )}
+          {job && (
+            <div style={{ marginTop: "0.75rem" }}>
+              Status{" "}
+              <span className={`status-pill status-${job.status}`}>
+                {job.status}
+              </span>
+              {job.current_stage ? (
+                <>
+                  {" "}
+                  · stage <code>{job.current_stage}</code>
+                </>
+              ) : null}
+              {polling ? " · polling…" : null}
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="alert alert-error" role="alert">
+            {error}
           </div>
         )}
-        {job && (
-          <div style={{ marginTop: "0.75rem" }}>
-            Status{" "}
-            <span className={`status-pill status-${job.status}`}>
-              {job.status}
-            </span>
-            {job.current_stage ? (
-              <>
-                {" "}
-                · stage <code>{job.current_stage}</code>
-              </>
-            ) : null}
-            {polling ? " · polling…" : null}
+
+        {job?.error && (
+          <div className="alert alert-error" role="alert">
+            {job.error.code ? <strong>{job.error.code}: </strong> : null}
+            {job.error.message ?? "Job failed"}
           </div>
         )}
-      </div>
 
-      {error && (
-        <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
-          {error}
-        </div>
-      )}
+        {job?.result_summary?.counts && (
+          <p className="meta" style={{ marginBottom: 0 }}>
+            Results: {job.result_summary.counts.passed ?? 0} passed /{" "}
+            {job.result_summary.counts.failed ?? 0} failed /{" "}
+            {job.result_summary.counts.error ?? 0} error /{" "}
+            {job.result_summary.counts.skipped ?? 0} skipped
+            {job.result_summary.pass_rate != null
+              ? ` · pass rate ${(job.result_summary.pass_rate * 100).toFixed(0)}%`
+              : null}
+          </p>
+        )}
+      </section>
 
-      {job?.error && (
-        <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
-          {job.error.code ? <strong>{job.error.code}: </strong> : null}
-          {job.error.message ?? "Job failed"}
-        </div>
-      )}
-
-      {(job?.report_object_key || job?.report_url) && (
-        <div className="alert" style={{ marginBottom: "1rem" }}>
-          Report ready:{" "}
-          <a
-            href={`/api/jobs/${encodeURIComponent(jobId)}/report`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open HTML report
-          </a>
-          {job.report_json_object_key ? (
-            <>
-              {" · "}
+      {(job?.report_object_key || job?.report_url || artifacts.length > 0) && (
+        <section className="job-panel" aria-labelledby="artifacts-heading">
+          <h2 id="artifacts-heading" className="section-title">
+            Artifacts
+          </h2>
+          {(job?.report_object_key || job?.report_url) && (
+            <p className="meta" style={{ marginBottom: "0.75rem" }}>
+              Report:{" "}
               <a
-                href={`/api/artifacts?key=${encodeURIComponent(job.report_json_object_key)}`}
+                href={`/api/jobs/${encodeURIComponent(jobId)}/report`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                report.json
+                Open HTML report
               </a>
-            </>
-          ) : null}
-        </div>
-      )}
-
-      {job?.result_summary?.counts && (
-        <p className="meta" style={{ marginBottom: "1rem" }}>
-          Results: {job.result_summary.counts.passed ?? 0} passed /{" "}
-          {job.result_summary.counts.failed ?? 0} failed /{" "}
-          {job.result_summary.counts.error ?? 0} error /{" "}
-          {job.result_summary.counts.skipped ?? 0} skipped
-          {job.result_summary.pass_rate != null
-            ? ` · pass rate ${(job.result_summary.pass_rate * 100).toFixed(0)}%`
-            : null}
-        </p>
+              {job.report_json_object_key ? (
+                <>
+                  {" · "}
+                  <a
+                    href={`/api/artifacts?key=${encodeURIComponent(job.report_json_object_key)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    report.json
+                  </a>
+                </>
+              ) : null}
+            </p>
+          )}
+          {screenshots.length > 0 && (
+            <div className="artifact-thumbs">
+              {screenshots.map((a) => {
+                const href = artifactHref(a, jobId);
+                if (!href) return null;
+                return (
+                  <a
+                    key={a.id}
+                    className="artifact-thumb"
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={artifactLabel(a)}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={href} alt={artifactLabel(a)} />
+                    <span>{artifactLabel(a)}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+          {otherArtifacts.length > 0 && (
+            <ul className="artifact-list">
+              {otherArtifacts.map((a) => {
+                const href = artifactHref(a, jobId);
+                return (
+                  <li key={a.id}>
+                    <span className="artifact-kind">{a.kind}</span>
+                    {href ? (
+                      <a href={href} target="_blank" rel="noopener noreferrer">
+                        {artifactLabel(a)}
+                      </a>
+                    ) : (
+                      <span>{artifactLabel(a)}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {!job?.report_object_key &&
+            !job?.report_url &&
+            artifacts.length === 0 && (
+              <p className="meta">No artifacts yet.</p>
+            )}
+        </section>
       )}
 
       {job?.stages && job.stages.length > 0 && (
-        <>
-          <h2 style={{ fontSize: "1rem", margin: "0 0 0.5rem" }}>Stages</h2>
+        <section className="job-panel" aria-labelledby="stages-heading">
+          <h2 id="stages-heading" className="section-title">
+            Stages
+          </h2>
           <ol className="stages">
             {job.stages.map((s) => (
               <li key={s.stage_key}>
@@ -592,12 +701,12 @@ export default function JobPage() {
               </li>
             ))}
           </ol>
-        </>
+        </section>
       )}
 
       {showCases && (
-        <>
-          <h2 style={{ fontSize: "1rem", margin: "1.5rem 0 0.5rem" }}>
+        <section className="job-panel" aria-labelledby="cases-heading">
+          <h2 id="cases-heading" className="section-title">
             Cases (edit plan + re-run)
           </h2>
           <p className="meta" style={{ marginBottom: "0.75rem" }}>
@@ -615,7 +724,7 @@ export default function JobPage() {
               />
             ))}
           </ul>
-        </>
+        </section>
       )}
 
       <div className="actions">
@@ -630,7 +739,7 @@ export default function JobPage() {
           Refresh now
         </button>
         <Link href="/" className="btn btn-secondary" style={{ textDecoration: "none" }}>
-          New job
+          Home
         </Link>
       </div>
 

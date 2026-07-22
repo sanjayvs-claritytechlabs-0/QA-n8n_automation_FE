@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   defaultJobOptions,
   jsonError,
@@ -16,7 +16,63 @@ type Body = {
   callback_url?: string;
   ai_provider?: AiProvider;
   ai_model?: string;
+  crawl_max_depth?: number;
+  crawl_max_pages?: number;
 };
+
+function parseOptionalInt(v: unknown): number | undefined {
+  if (v == null || v === "") return undefined;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.floor(n);
+}
+
+/** Recent jobs for home dashboard → n8n GET /webhook/qa/jobs */
+export async function GET(request: NextRequest) {
+  let cfg: ReturnType<typeof n8nConfig>;
+  try {
+    cfg = n8nConfig();
+  } catch (e) {
+    return jsonError(
+      500,
+      "CONFIG_ERROR",
+      e instanceof Error ? e.message : "Server misconfigured",
+    );
+  }
+
+  const limitRaw = request.nextUrl.searchParams.get("limit");
+  let limit = Number(limitRaw);
+  if (!Number.isInteger(limit) || limit < 1) limit = 50;
+  if (limit > 100) limit = 100;
+
+  try {
+    const res = await fetch(
+      `${cfg.baseUrl}/webhook/qa/jobs?limit=${limit}`,
+      {
+        method: "GET",
+        headers: { "X-QA-Token": cfg.token },
+        cache: "no-store",
+      },
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return NextResponse.json(
+        data ?? {
+          ok: false,
+          error: {
+            code: "UPSTREAM_ERROR",
+            message: `n8n returned HTTP ${res.status}`,
+          },
+        },
+        { status: res.status >= 400 ? res.status : 502 },
+      );
+    }
+    return NextResponse.json(data ?? { ok: true, jobs: [], count: 0 });
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    return jsonError(502, "UPSTREAM_UNAVAILABLE", err.message);
+  }
+}
 
 export async function POST(request: Request) {
   let body: Body;
@@ -35,6 +91,8 @@ export async function POST(request: Request) {
       ? body.ai_provider
       : undefined;
   const ai_model = body.ai_model?.trim() || undefined;
+  const crawl_max_depth = parseOptionalInt(body.crawl_max_depth);
+  const crawl_max_pages = parseOptionalInt(body.crawl_max_pages);
 
   if (!project_name) {
     return jsonError(400, "VALIDATION_ERROR", "project_name is required");
@@ -58,7 +116,12 @@ export async function POST(request: Request) {
   let options: Record<string, unknown>;
   try {
     cfg = n8nConfig();
-    options = defaultJobOptions(mode, { ai_provider, ai_model });
+    options = defaultJobOptions(mode, {
+      ai_provider,
+      ai_model,
+      crawl_max_depth,
+      crawl_max_pages,
+    });
   } catch (e) {
     return jsonError(
       500,

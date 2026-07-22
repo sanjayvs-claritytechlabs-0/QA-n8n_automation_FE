@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import Link from "next/link";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AI_MODELS,
@@ -9,6 +10,25 @@ import {
   type Mode,
 } from "@/lib/n8n";
 
+type JobListRow = {
+  job_id: string;
+  project_id?: string;
+  project_name?: string;
+  website_url?: string | null;
+  status: string;
+  current_stage?: string | null;
+  created_at?: string | null;
+  finished_at?: string | null;
+  counts?: {
+    total?: number;
+    passed?: number;
+    failed?: number;
+    error?: number;
+    skipped?: number;
+  } | null;
+  pass_rate?: number | null;
+};
+
 export default function HomePage() {
   const router = useRouter();
   const [projectName, setProjectName] = useState("");
@@ -16,13 +36,44 @@ export default function HomePage() {
   const [mode, setMode] = useState<Mode>("ai_qa");
   const [aiProvider, setAiProvider] = useState<AiProvider>("gemini");
   const [aiModel, setAiModel] = useState(defaultModelFor("gemini"));
+  const [crawlDepth, setCrawlDepth] = useState(1);
+  const [crawlPages, setCrawlPages] = useState(8);
   const [csvText, setCsvText] = useState(
     "id,title,steps,expected\nTC-001,Open Learn more link,Click Learn more,Learn more link is available",
   );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [jobs, setJobs] = useState<JobListRow[]>([]);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+  const [jobsLoading, setJobsLoading] = useState(true);
 
   const models = useMemo(() => AI_MODELS[aiProvider], [aiProvider]);
+
+  const loadJobs = useCallback(async () => {
+    setJobsLoading(true);
+    try {
+      const res = await fetch("/api/jobs?limit=50", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setJobsError(
+          data?.error?.message || `Could not load jobs (${res.status})`,
+        );
+        setJobs([]);
+        return;
+      }
+      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+      setJobsError(null);
+    } catch (e) {
+      setJobsError(e instanceof Error ? e.message : "Network error");
+      setJobs([]);
+    } finally {
+      setJobsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadJobs();
+  }, [loadJobs]);
 
   function onProviderChange(next: AiProvider) {
     setAiProvider(next);
@@ -45,6 +96,8 @@ export default function HomePage() {
           csv_text: mode === "manual_csv" ? csvText : undefined,
           ai_provider: aiProvider,
           ai_model: aiModel,
+          crawl_max_depth: crawlDepth,
+          crawl_max_pages: crawlPages,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -175,6 +228,33 @@ export default function HomePage() {
           </span>
         </label>
 
+        <div className="field-row">
+          <label>
+            Crawl max depth
+            <input
+              type="number"
+              name="crawl_max_depth"
+              min={0}
+              max={5}
+              value={crawlDepth}
+              onChange={(e) => setCrawlDepth(Number(e.target.value))}
+            />
+            <span className="hint">0–5 (server clamps)</span>
+          </label>
+          <label>
+            Crawl max pages
+            <input
+              type="number"
+              name="crawl_max_pages"
+              min={1}
+              max={50}
+              value={crawlPages}
+              onChange={(e) => setCrawlPages(Number(e.target.value))}
+            />
+            <span className="hint">1–50 (server clamps)</span>
+          </label>
+        </div>
+
         {mode === "manual_csv" && (
           <label>
             CSV test cases
@@ -201,6 +281,83 @@ export default function HomePage() {
           {submitting ? "Starting…" : "Start job"}
         </button>
       </form>
+
+      <section className="jobs-section" aria-labelledby="recent-jobs-heading">
+        <div className="jobs-head">
+          <h2 id="recent-jobs-heading">Recent jobs</h2>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void loadJobs()}
+            disabled={jobsLoading}
+          >
+            {jobsLoading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        {jobsError && (
+          <div className="alert alert-error" role="alert">
+            {jobsError}
+          </div>
+        )}
+        {!jobsError && !jobsLoading && jobs.length === 0 && (
+          <p className="meta">No jobs yet. Start one above.</p>
+        )}
+        {jobs.length > 0 && (
+          <div className="jobs-table-wrap">
+            <table className="jobs-table">
+              <thead>
+                <tr>
+                  <th scope="col">Status</th>
+                  <th scope="col">Project</th>
+                  <th scope="col">Results</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((j) => (
+                  <tr key={j.job_id}>
+                    <td>
+                      <span className={`status-pill status-${j.status}`}>
+                        {j.status}
+                      </span>
+                      {j.current_stage ? (
+                        <div className="table-sub">{j.current_stage}</div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <div className="table-primary">
+                        {j.project_name || "—"}
+                      </div>
+                      {j.website_url ? (
+                        <div className="table-sub">{j.website_url}</div>
+                      ) : null}
+                    </td>
+                    <td className="mono-cell">
+                      {j.counts
+                        ? `${j.counts.passed ?? 0}/${j.counts.total ?? 0}`
+                        : "—"}
+                      {j.pass_rate != null
+                        ? ` · ${(j.pass_rate * 100).toFixed(0)}%`
+                        : ""}
+                    </td>
+                    <td className="mono-cell">
+                      {j.created_at
+                        ? new Date(j.created_at).toLocaleString()
+                        : "—"}
+                    </td>
+                    <td>
+                      <Link href={`/jobs/${encodeURIComponent(j.job_id)}`}>
+                        Open
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <p className="footer-note">
         Playwright URL and S3 bucket are injected from server env — not from

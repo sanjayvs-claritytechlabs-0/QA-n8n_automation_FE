@@ -38,10 +38,16 @@ export function n8nConfig() {
   };
 }
 
-/** Server-side defaults injected into Create-or-Start options. */
+/** Server-side defaults; UI may override crawl/browser/ai fields. */
 export function defaultJobOptions(
   mode: Mode,
-  overrides?: { ai_provider?: AiProvider; ai_model?: string },
+  overrides?: {
+    ai_provider?: AiProvider;
+    ai_model?: string;
+    crawl_max_depth?: number;
+    crawl_max_pages?: number;
+    browser?: string;
+  },
 ) {
   const envProvider = (env("AI_PROVIDER") || "gemini").toLowerCase();
   const provider: AiProvider =
@@ -51,19 +57,31 @@ export function defaultJobOptions(
         ? "openai"
         : "gemini";
 
+  const depthRaw =
+    overrides?.crawl_max_depth ?? Number(env("CRAWL_MAX_DEPTH") || 1);
+  const pagesRaw =
+    overrides?.crawl_max_pages ?? Number(env("CRAWL_MAX_PAGES") || 8);
+  const crawl_max_depth = Math.min(
+    5,
+    Math.max(0, Number.isFinite(depthRaw) ? Math.floor(depthRaw) : 1),
+  );
+  const crawl_max_pages = Math.min(
+    50,
+    Math.max(1, Number.isFinite(pagesRaw) ? Math.floor(pagesRaw) : 8),
+  );
+
   const options: Record<string, unknown> = {
     mode,
     playwright_service_url: requireEnv("PLAYWRIGHT_SERVICE_URL").replace(/\/$/, ""),
     s3_bucket: requireEnv("S3_BUCKET"),
-    browser: env("BROWSER") ?? "chromium",
+    browser: (overrides?.browser?.trim() || env("BROWSER") || "chromium").toLowerCase(),
     ai_provider: provider,
     ai_model:
       overrides?.ai_model?.trim() ||
       env("AI_MODEL") ||
       defaultModelFor(provider),
-    // Safe under Railway ~300s discover proxy; override via CRAWL_MAX_* env if needed.
-    crawl_max_depth: Number(env("CRAWL_MAX_DEPTH") || 1),
-    crawl_max_pages: Number(env("CRAWL_MAX_PAGES") || 8),
+    crawl_max_depth,
+    crawl_max_pages,
   };
   const artifactBase = env("ARTIFACT_BASE_URL");
   if (artifactBase) options.artifact_base_url = artifactBase.replace(/\/$/, "");
