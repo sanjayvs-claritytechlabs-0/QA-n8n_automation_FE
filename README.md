@@ -18,6 +18,8 @@ Minimal Next.js (App Router) UI that starts QA jobs and polls status via **serve
 |----|----------------|
 | Home form → start job | `POST /api/jobs` → `POST {N8N_BASE_URL}/webhook/qa/create-or-start` |
 | `/jobs/[jobId]` polls every 4s | `GET /api/jobs/[jobId]` → `GET …/webhook/qa/job-status?job_id=` |
+| Save structured plan | `POST /api/jobs/[jobId]/plans/[planId]` → `POST …/webhook/qa/plans/update` |
+| Re-run one case | `POST /api/jobs/[jobId]/cases/[planId]/rerun` → `POST …/webhook/qa/cases/re-run` |
 | Open HTML report | `GET /api/jobs/[jobId]/report` → poll + private S3 GetObject (rewrites `s3://` imgs) |
 | Raw artifact | `GET /api/artifacts?key=qa/...` → private S3 GetObject |
 
@@ -82,6 +84,7 @@ Optional: set Root Directory to `Frontend` if you keep this folder inside a mono
 3. `npm run dev` → open home page.
 4. Start an **AI QA** job against `https://example.com` (or Manual/CSV with a case that matches the site — see `n8n/README.md` E2E notes).
 5. You should land on `/jobs/<uuid>` with stages updating; terminal `succeeded` / `failed`; **Open HTML report** goes to `/api/jobs/<uuid>/report` (private S3 via server credentials).
+6. After execution, expand a failed/error case → edit steps/locators → **Save plan** → **Re-run this case**. Requires Plans Update + Cases Re-run webhooks published, and SQL `003_execution_results_job_case_unique.sql` applied once.
 
 Direct BE check (token only in your shell, not in FE):
 
