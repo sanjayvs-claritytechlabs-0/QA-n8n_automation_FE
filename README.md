@@ -131,13 +131,12 @@ That is **not** an env-var naming issue. The GitHub `next.config.ts` has no `out
 Live check (PowerShell):
 
 ```powershell
-(Invoke-WebRequest "https://YOUR-APP.vercel.app/api/ping" -SkipHttpErrorCheck).Content
 (Invoke-WebRequest "https://YOUR-APP.vercel.app/api/health" -SkipHttpErrorCheck).Content
 (Invoke-WebRequest "https://YOUR-APP.vercel.app/api/jobs?limit=1" -SkipHttpErrorCheck).Content
 ```
 
-- **HTML** + `nextExport` → still static. Do the recovery steps below (most reliable: **delete & re-import** the Vercel project with Output Directory left untouched).
-- **JSON** from `/api/ping` or `/api/health` → serverless works; then fix `N8N_*` if jobs still fail.
+- **JSON** `{ "ok": true, ... }` → API works.
+- **HTML** + `nextExport` / `X-Matched-Path=/500` on routes that exist in the build → often a **conflicting dynamic slug** under the same folder (e.g. `cases/[caseId]` vs `cases/[planId]/…`). That makes Vercel build succeed and still list `ƒ /api/*`, but functions fail at runtime. Keep one param name per path level.
 
 #### Recovery (when the UI settings “look correct” but production is still static)
 

@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { jsonError, n8nConfig } from "@/lib/n8n";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Ctx = { params: Promise<{ jobId: string; planId: string }> };
 
+/**
+ * POST /api/jobs/[jobId]/plans/[planId]/rerun
+ * (Must live under plans/[planId], not cases/[planId] — conflicting slug
+ * names caseId vs planId under cases/ break all /api/* on Vercel.)
+ */
 export async function POST(_request: Request, context: Ctx) {
   const { jobId, planId } = await context.params;
   if (!jobId || !UUID_RE.test(jobId)) {

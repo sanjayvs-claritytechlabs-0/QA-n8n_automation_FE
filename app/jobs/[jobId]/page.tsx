@@ -274,7 +274,7 @@ function CaseEditor({
     setMsg(null);
     try {
       const res = await fetch(
-        `/api/jobs/${encodeURIComponent(jobId)}/cases/${encodeURIComponent(planId)}/rerun`,
+        `/api/jobs/${encodeURIComponent(jobId)}/plans/${encodeURIComponent(planId)}/rerun`,
         { method: "POST" },
       );
       const data = await res.json().catch(() => null);
