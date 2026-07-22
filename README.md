@@ -148,7 +148,7 @@ Live check (PowerShell):
 4. **Deployments** → ⋮ on latest → **Redeploy** → untick “Use existing Build Cache”.
 5. If still `nextExport`: **Delete the Vercel project** → **Import** the same GitHub repo again → Framework **Next.js** → leave Output Directory untouched → paste env vars → Deploy.
 
-`npm run build` now runs `scripts/assert-not-static.mjs` so a static export **fails the Vercel build** instead of shipping a broken site.
+`npm run build` runs `scripts/assert-not-static.mjs`, which **fails only if** an `out/` folder was produced (real static export) or App Router API output is missing. (`.next/export-marker.json` alone is normal and is ignored.)
 
 ## Smoke-test against live n8n
 

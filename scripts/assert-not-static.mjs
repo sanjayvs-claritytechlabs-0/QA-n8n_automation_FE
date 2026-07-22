@@ -1,24 +1,15 @@
 /**
- * Fails the build if Next produced a static export (out/) or omitted API routes.
- * That deploy mode serves HTML 500s for /api/* with nextExport:true on Vercel.
+ * Fails only on a real static HTML export (out/) or missing App Router API build.
+ * Note: `.next/export-marker.json` is always written by `next build` — do NOT treat
+ * that file as proof of `output: "export"`.
  */
 import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
 const outDir = path.join(root, "out");
-const exportMarker = path.join(root, ".next", "export-marker.json");
-const apiJobs =
-  path.join(root, ".next", "server", "app", "api", "jobs", "route.js");
-const apiJobsAlt = path.join(
-  root,
-  ".next",
-  "server",
-  "app",
-  "api",
-  "jobs",
-  "route_client-reference-manifest.js",
-);
+const apiDir = path.join(root, ".next", "server", "app", "api");
+const requiredServer = path.join(root, ".next", "required-server-files.json");
 
 function exists(p) {
   return fs.existsSync(p);
@@ -27,39 +18,37 @@ function exists(p) {
 if (exists(outDir)) {
   console.error(`
 [assert-not-static] Found ${outDir}
-Static export ran. API routes will NOT work on Vercel.
+Static HTML export ran (output: "export" or next export). API routes will break.
 
-Fix:
+Fix on Vercel:
   1. next.config must NOT set output: "export"
-  2. Vercel → Settings → Build & Development → Output Directory:
-     clear it and turn Override OFF (not "out")
-  3. Build Command must be only: next build
-  4. Redeploy (or delete & re-import the Vercel project)
+  2. Output Directory: clear + Override OFF
+  3. Build Command: npm run build (or next build only)
+  4. Redeploy without build cache
 `);
   process.exit(1);
 }
 
-if (exists(exportMarker)) {
-  const raw = fs.readFileSync(exportMarker, "utf8");
-  console.error(`[assert-not-static] Found export-marker.json:\n${raw}`);
-  process.exit(1);
-}
-
-if (!exists(apiJobs) && !exists(path.dirname(apiJobs))) {
-  // Directory missing entirely is a hard fail
-  console.error(`
-[assert-not-static] Missing .next/server/app/api/jobs after next build.
-App Router API routes were not compiled. Check that app/api/**/route.ts exists
-and Framework Preset is Next.js (not Other/static).
-`);
-  process.exit(1);
-}
-
-// Soft note: route.js path varies slightly by Next version; dir presence is enough.
-const apiDir = path.join(root, ".next", "server", "app", "api");
 if (!exists(apiDir)) {
-  console.error("[assert-not-static] Missing .next/server/app/api — API routes not built.");
+  console.error(`
+[assert-not-static] Missing ${apiDir}
+App Router API routes were not compiled into the server output.
+`);
   process.exit(1);
 }
 
-console.log("[assert-not-static] OK — server API output present, no out/ export.");
+const apiEntries = fs.readdirSync(apiDir);
+if (apiEntries.length === 0) {
+  console.error("[assert-not-static] .next/server/app/api is empty.");
+  process.exit(1);
+}
+
+if (!exists(requiredServer)) {
+  console.warn(
+    "[assert-not-static] Warning: missing required-server-files.json (unusual for a Vercel Next deploy).",
+  );
+}
+
+console.log(
+  `[assert-not-static] OK — no out/; API server output present (${apiEntries.join(", ")}).`,
+);
