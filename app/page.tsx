@@ -39,9 +39,10 @@ export default function HomePage() {
   const [aiModel, setAiModel] = useState(defaultModelFor("gemini"));
   const [crawlDepth, setCrawlDepth] = useState(1);
   const [crawlPages, setCrawlPages] = useState(8);
-  const [csvText, setCsvText] = useState(
-    "id,title,steps,expected\nTC-001,Open Learn more link,Click Learn more,Learn more link is available",
-  );
+  const [csvText, setCsvText] = useState("");
+  const [csvFilename, setCsvFilename] = useState<string | null>(null);
+  const [csvPasteOpen, setCsvPasteOpen] = useState(false);
+  const [csvFileError, setCsvFileError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [jobs, setJobs] = useState<JobListRow[]>([]);
@@ -88,9 +89,41 @@ export default function HomePage() {
     setAiModel((prev) => (list.includes(prev) ? prev : defaultModelFor(next)));
   }
 
+  function onCsvFile(file: File | null) {
+    setCsvFileError(null);
+    if (!file) return;
+    const name = file.name || "cases.csv";
+    if (
+      file.type &&
+      !file.type.includes("csv") &&
+      !file.type.includes("text") &&
+      !name.toLowerCase().endsWith(".csv")
+    ) {
+      setCsvFileError("Choose a .csv file");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      if (!text.trim()) {
+        setCsvFileError("CSV file is empty");
+        return;
+      }
+      setCsvText(text);
+      setCsvFilename(name);
+      setCsvPasteOpen(false);
+    };
+    reader.onerror = () => setCsvFileError("Could not read file");
+    reader.readAsText(file);
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (mode === "manual_csv" && !csvText.trim()) {
+      setError("Upload or paste a CSV with at least one test case");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/jobs", {
@@ -101,6 +134,8 @@ export default function HomePage() {
           website_url: websiteUrl,
           mode,
           csv_text: mode === "manual_csv" ? csvText : undefined,
+          csv_filename:
+            mode === "manual_csv" && csvFilename ? csvFilename : undefined,
           ai_provider: aiProvider,
           ai_model: aiModel,
           crawl_max_depth: crawlDepth,
@@ -260,21 +295,71 @@ export default function HomePage() {
             <span className="hint">1–50 (server clamps)</span>
           </label>
         </div>
+        <p className="hint" style={{ marginTop: "-0.35rem" }}>
+          Depth/pages still run Website Discovery + Locator Extraction in CSV
+          mode (locators power the plan editor).
+        </p>
 
         {mode === "manual_csv" && (
-          <label>
-            CSV test cases
-            <span className="hint">
-              Header row required. Columns: id, title, steps, expected, tags
-            </span>
-            <textarea
-              name="csv_text"
-              required
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              spellCheck={false}
-            />
-          </label>
+          <fieldset className="field-group">
+            <legend>CSV test cases</legend>
+            <label>
+              Upload CSV
+              <span className="hint">
+                Header row required. Columns: id, title, steps, expected, tags
+              </span>
+              <input
+                type="file"
+                name="csv_file"
+                accept=".csv,text/csv"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  onCsvFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {csvFilename ? (
+              <p className="meta" style={{ margin: 0 }}>
+                Loaded: <code>{csvFilename}</code>
+                {csvText.trim()
+                  ? ` · ${csvText.trim().split(/\r?\n/).filter(Boolean).length - 1} data row(s) approx`
+                  : null}
+              </p>
+            ) : null}
+            {csvFileError ? (
+              <p className="case-error" role="alert">
+                {csvFileError}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setCsvPasteOpen((v) => !v)}
+            >
+              {csvPasteOpen ? "Hide paste" : "Paste CSV instead"}
+            </button>
+            {csvPasteOpen ? (
+              <label>
+                Paste CSV
+                <textarea
+                  name="csv_text"
+                  value={csvText}
+                  onChange={(e) => {
+                    setCsvText(e.target.value);
+                    setCsvFilename(null);
+                  }}
+                  spellCheck={false}
+                  placeholder={
+                    "id,title,steps,expected\nTC-001,Open Learn more,Click Learn more,Link works"
+                  }
+                />
+              </label>
+            ) : null}
+            {!csvText.trim() ? (
+              <span className="hint">A non-empty CSV is required for Manual mode.</span>
+            ) : null}
+          </fieldset>
         )}
 
         {error && (

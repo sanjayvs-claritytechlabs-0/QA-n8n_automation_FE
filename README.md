@@ -21,8 +21,9 @@ Minimal Next.js (App Router) UI that starts QA jobs and polls status via **serve
 | `/projects` list + delete | `GET /api/projects` · `DELETE /api/projects/[id]` → n8n list/delete + FE S3 prefix cleanup |
 | `/projects/[id]` jobs + re-run/delete | `GET /api/projects/[id]` · job delete/re-run proxies |
 | `/jobs/[jobId]` polls every 4s | `GET /api/jobs/[jobId]` → `GET …/webhook/qa/job-status?job_id=` |
-| Save structured plan JSON | `POST /api/jobs/[jobId]/plans/[planId]` → `POST …/webhook/qa/plans/update` |
-| Re-run one case | `POST /api/jobs/[jobId]/cases/[planId]/rerun` → `POST …/webhook/qa/cases/re-run` |
+| Save structured plan | `POST /api/jobs/[jobId]/plans/[planId]` → `POST …/webhook/qa/plans/update` |
+| Re-run one case | `POST /api/jobs/[jobId]/plans/[planId]/rerun` → `POST …/webhook/qa/cases/re-run` |
+| Add custom locator | `POST /api/jobs/[jobId]/locators` → `POST …/webhook/qa/locators/create` |
 | Create / delete case | `POST /api/jobs/[jobId]/cases` · `DELETE …/cases/[caseId]` |
 | Re-run / delete job | `POST /api/jobs/[jobId]/rerun` · `DELETE /api/jobs/[jobId]` |
 | Open HTML report | `GET /api/jobs/[jobId]/report` → poll + private S3 GetObject (rewrites `s3://` imgs) |
@@ -36,7 +37,7 @@ S3 credentials stay **server-side** (`N8N_EXTERNAL_STORAGE_S3_*`). Deletes colle
 
 - **Projects** (`/projects`): list projects (name, URL, job count), delete project (confirm).
 - **Project detail**: jobs list; **Re-run** clones a new job (history kept); **Delete** job + S3 prefix.
-- **Job detail**: plan Monaco editor + **Re-run this case** (existing); **Add case** (manual title/steps/expected + blocked plan stub); **Delete case** (plans/results/artifacts + S3 keys; refreshes `result_summary` counts); screenshots + videos listed under Artifacts.
+- **Job detail**: **Edit steps** form (action / description / locator dropdown / value) + Advanced JSON (Monaco) + **Re-run this case**; **Add custom locator** inserts into `qa.locators` then appears in dropdowns; **Add case** (manual stub); **Delete case**; screenshots + videos under Artifacts. Playwright source tab is read-only — script edit/re-run is v2 backlog.
 
 ### Job re-run behavior
 
@@ -70,7 +71,9 @@ Optional server env (injected into Create-or-Start `options`):
 | `CAPTURE_VIDEO=false` | Disable per-case video (default is on) |
 | `CAPTURE_SCREENSHOT=false` | Disable per-case screenshots (default is on for pass + fail) |
 
-Job detail **Cases** uses a Monaco JSON editor for the structured plan (`steps` / `assertions` / `summary`). Optional `playwright_source` is shown read-only — v1 execution ignores it.
+Job detail **Cases** defaults to a form editor for structured plans (`steps` / `assertions` / `summary` / `locator_id` dropdowns). **Advanced JSON** keeps Monaco for power users. Optional `playwright_source` is read-only — v1 execution ignores it (no script edit/re-run).
+
+Home **Manual/CSV** mode: file upload is primary (`accept=.csv`); paste is optional. Crawl depth/pages still run Discovery + Locators so the plan editor has a catalog.
 
 ## Local setup
 
@@ -157,9 +160,11 @@ Live check (PowerShell):
 3. `npm install` then `npm run dev` → open home page (crawl depth/pages + recent jobs table).
 4. Open **Projects** → confirm list loads; open a project → jobs list.
 5. Start an **AI QA** job against `https://example.com` (or Manual/CSV — see `n8n/README.md` E2E notes).
-6. On `/jobs/<uuid>`: stages update; **Artifacts** shows screenshots/videos/report; expand a case → edit **Plan JSON** → **Save plan** → **Re-run this case**.
-7. **Add case** → create stub → edit plan → re-run that case.
-8. From project page: **Re-run** job (new job id) and optionally **Delete** a finished job; confirm S3 prefix is cleaned (or `s3.failed_count` logged).
+6. On `/jobs/<uuid>`: stages update; **Artifacts** shows screenshots/videos/report; expand a case → **Edit steps** (bind locators) → **Save plan** → **Re-run this case**.
+7. **Add custom locator** → appears in dropdown → bind to a step → save → re-run.
+8. **Add case** → create stub → map steps/locators → re-run that case.
+9. From project page: **Re-run** job (new job id) and optionally **Delete** a finished job; confirm S3 prefix is cleaned (or `s3.failed_count` logged).
+10. Confirm **QA — Locator Create** is published (`POST /webhook/qa/locators/create`).
 
 ### Ops verify checklist
 
@@ -167,9 +172,10 @@ Live check (PowerShell):
 - [ ] `DELETE /api/projects/{id}` removes DB rows; response includes `s3_prefix` / `s3`
 - [ ] `DELETE /api/jobs/{id}` removes job; S3 under `qa/{project}/{job}/` gone or reported failed
 - [ ] `POST /api/jobs/{id}/cases` creates case + blocked plan stub
+- [ ] `POST /api/jobs/{id}/locators` creates catalog locator (strategy allowlist)
+- [ ] Form editor save + Advanced JSON save + case re-run still work
 - [ ] `DELETE /api/jobs/{id}/cases/{caseId}` removes case; `result_summary` refreshed
 - [ ] `POST /api/jobs/{id}/rerun` returns new `job_id` and orchestrator starts
-- [ ] Existing plan save + case re-run still work
 
 Direct BE check (token only in your shell, not in FE):
 

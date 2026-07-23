@@ -949,6 +949,20 @@ a.btn {
   align-items: center;
 }
 
+.locator-create {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.65rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.assertion-row {
+  grid-template-columns: 1.5rem 6.5rem 1fr 1.4fr 0.8fr auto auto;
+}
+
 .step-row select,
 .step-row input {
   min-width: 0;

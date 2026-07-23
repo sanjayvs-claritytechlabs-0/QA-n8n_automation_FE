@@ -15,6 +15,7 @@ type Body = {
   website_url?: string;
   mode?: Mode;
   csv_text?: string;
+  csv_filename?: string;
   project_id?: string;
   callback_url?: string;
   ai_provider?: AiProvider;
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
   const website_url = body.website_url?.trim() ?? "";
   const mode: Mode = body.mode === "manual_csv" ? "manual_csv" : "ai_qa";
   const csv_text = body.csv_text?.trim() ?? "";
+  const csv_filename = body.csv_filename?.trim() || undefined;
   const ai_provider: AiProvider | undefined =
     body.ai_provider === "openai" || body.ai_provider === "gemini"
       ? body.ai_provider
@@ -158,7 +160,10 @@ export async function POST(request: Request) {
     website_url,
     options,
   };
-  if (mode === "manual_csv") payload.csv_text = csv_text;
+  if (mode === "manual_csv") {
+    payload.csv_text = csv_text;
+    if (csv_filename) payload.csv_filename = csv_filename;
+  }
   if (body.project_id?.trim()) payload.project_id = body.project_id.trim();
   if (body.callback_url?.trim()) payload.callback_url = body.callback_url.trim();
 

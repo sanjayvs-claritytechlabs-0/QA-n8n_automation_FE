@@ -36,6 +36,13 @@ type PlanAssertion = {
   locator_id?: string | null;
 };
 
+type PlanDoc = {
+  status?: string;
+  summary?: string;
+  steps: PlanStep[];
+  assertions: PlanAssertion[];
+};
+
 type CaseRow = {
   test_case_id: string | null;
   test_plan_id: string | null;
@@ -59,6 +66,7 @@ type LocatorOpt = {
   id: string;
   name?: string | null;
   strategy?: string | null;
+  selector?: string | null;
   page_id?: string | null;
   role?: string | null;
   accessible_name?: string | null;
@@ -104,6 +112,31 @@ type JobStatus = {
   created_at?: string | null;
 };
 
+const STEP_ACTIONS = [
+  "goto",
+  "fill",
+  "click",
+  "check",
+  "uncheck",
+  "select",
+  "press",
+  "wait",
+  "assert",
+] as const;
+
+const LOCATOR_STRATEGIES = [
+  "testid",
+  "role",
+  "css",
+  "xpath",
+  "text",
+  "placeholder",
+  "label",
+] as const;
+
+const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
+const POLL_MS = 4000;
+
 function artifactHref(a: ArtifactRow, jobId: string): string | null {
   const format =
     a.meta && typeof a.meta.format === "string" ? a.meta.format : null;
@@ -131,12 +164,50 @@ function artifactLabel(a: ArtifactRow): string {
   return base || a.kind || "artifact";
 }
 
-const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
-const POLL_MS = 4000;
-
 function locatorLabel(l: LocatorOpt): string {
   const name = l.name || l.accessible_name || l.role || "locator";
   return `${name} · ${l.strategy || "?"} · ${l.id.slice(0, 8)}`;
+}
+
+function emptyStep(ordinal: number): PlanStep {
+  return {
+    ordinal,
+    action: "click",
+    description: "",
+    locator_id: null,
+    value: null,
+    status: "unmapped",
+    gap_reason: null,
+  };
+}
+
+function emptyAssertion(): PlanAssertion {
+  return { type: "url_contains", expected: "", locator_id: null };
+}
+
+function planFromRow(plan: CaseRow["plan"]): PlanDoc {
+  return {
+    status: plan?.status ?? "ready",
+    summary: plan?.summary ?? "",
+    steps: Array.isArray(plan?.steps)
+      ? plan!.steps!.map((s, i) => ({
+          ordinal: s.ordinal ?? i + 1,
+          action: s.action || "click",
+          description: s.description ?? "",
+          locator_id: s.locator_id ?? null,
+          value: s.value ?? null,
+          status: s.status ?? null,
+          gap_reason: s.gap_reason ?? null,
+        }))
+      : [],
+    assertions: Array.isArray(plan?.assertions)
+      ? plan!.assertions!.map((a) => ({
+          type: a.type || "assert",
+          expected: a.expected ?? "",
+          locator_id: a.locator_id ?? null,
+        }))
+      : [],
+  };
 }
 
 function CaseEditor({
@@ -144,29 +215,98 @@ function CaseEditor({
   row,
   locators,
   onSaved,
+  onLocatorsChanged,
 }: {
   jobId: string;
   row: CaseRow;
   locators: LocatorOpt[];
   onSaved: () => void;
+  onLocatorsChanged: () => void;
 }) {
   const [open, setOpen] = useState(
     () => row.status === "failed" || row.status === "error",
   );
+  const [plan, setPlan] = useState<PlanDoc>(() => planFromRow(row.plan));
   const [planText, setPlanText] = useState(() => planToEditorText(row.plan));
-  const [tab, setTab] = useState<"plan" | "source">("plan");
-  const [busy, setBusy] = useState<"save" | "rerun" | "delete" | null>(null);
+  const [tab, setTab] = useState<"form" | "json" | "source">("form");
+  const [busy, setBusy] = useState<
+    "save" | "rerun" | "delete" | "locator" | null
+  >(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [addLocatorOpen, setAddLocatorOpen] = useState(false);
+  const [bindStepIdx, setBindStepIdx] = useState<number | null>(null);
+  const [locName, setLocName] = useState("");
+  const [locStrategy, setLocStrategy] =
+    useState<(typeof LOCATOR_STRATEGIES)[number]>("testid");
+  const [locSelector, setLocSelector] = useState("");
+  const [locRole, setLocRole] = useState("");
+  const [locA11y, setLocA11y] = useState("");
+  const [locPageId, setLocPageId] = useState("");
 
   const hasSource =
     typeof row.playwright_source === "string" &&
     row.playwright_source.trim().length > 0;
 
+  const pageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of locators) {
+      if (l.page_id) ids.add(l.page_id);
+    }
+    return Array.from(ids);
+  }, [locators]);
+
+  const planKey = useMemo(
+    () => JSON.stringify(row.plan ?? null),
+    [row.plan],
+  );
+
   useEffect(() => {
+    const next = planFromRow(row.plan);
+    setPlan(next);
     setPlanText(planToEditorText(row.plan));
     setJsonError(null);
-  }, [row.test_plan_id, row.plan]);
+  }, [row.test_plan_id, planKey, row.plan]);
+
+  function switchTab(next: "form" | "json" | "source") {
+    if (next === tab) return;
+    if (tab === "form" && next === "json") {
+      setPlanText(planToEditorText(plan));
+      setJsonError(null);
+    }
+    if (tab === "json" && next === "form") {
+      const parsed = parsePlanDocument(planText);
+      if (!parsed.ok) {
+        setJsonError(parsed.error);
+        setMsg("Fix JSON before switching to Edit steps");
+        return;
+      }
+      setPlan({
+        status: parsed.plan.status ?? "ready",
+        summary: parsed.plan.summary ?? "",
+        steps: (parsed.plan.steps as PlanStep[]) || [],
+        assertions: (parsed.plan.assertions as PlanAssertion[]) || [],
+      });
+      setJsonError(null);
+    }
+    setTab(next);
+  }
+
+  function updateStep(idx: number, patch: Partial<PlanStep>) {
+    setPlan((prev) => ({
+      ...prev,
+      steps: prev.steps.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
+    }));
+  }
+
+  function updateAssertion(idx: number, patch: Partial<PlanAssertion>) {
+    setPlan((prev) => ({
+      ...prev,
+      assertions: prev.assertions.map((a, i) =>
+        i === idx ? { ...a, ...patch } : a,
+      ),
+    }));
+  }
 
   async function deleteCase() {
     if (!row.test_case_id) return;
@@ -184,7 +324,9 @@ function CaseEditor({
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
         setMsg(
-          data?.error?.message || data?.error?.code || `Delete failed (${res.status})`,
+          data?.error?.message ||
+            data?.error?.code ||
+            `Delete failed (${res.status})`,
         );
         return;
       }
@@ -234,29 +376,65 @@ function CaseEditor({
     setMsg("Formatted");
   }
 
+  function planPayloadFromForm(): PlanDoc {
+    return {
+      status: plan.status || "ready",
+      summary: plan.summary || "",
+      steps: plan.steps.map((s, i) => ({
+        ordinal: i + 1,
+        action: (s.action || "click").toLowerCase(),
+        description: s.description || null,
+        locator_id: s.locator_id || null,
+        value: s.value === "" || s.value == null ? null : String(s.value),
+        status: s.status ?? null,
+        gap_reason: s.gap_reason ?? null,
+      })),
+      assertions: plan.assertions.map((a) => ({
+        type: a.type || "assert",
+        expected: a.expected === "" || a.expected == null ? null : String(a.expected),
+        locator_id: a.locator_id || null,
+      })),
+    };
+  }
+
   async function save() {
     setBusy("save");
     setMsg(null);
-    const parsed = parsePlanDocument(planText);
-    if (!parsed.ok) {
-      setJsonError(parsed.error);
-      setBusy(null);
-      return;
+    let payload: PlanDoc;
+    if (tab === "json") {
+      const parsed = parsePlanDocument(planText);
+      if (!parsed.ok) {
+        setJsonError(parsed.error);
+        setBusy(null);
+        return;
+      }
+      setJsonError(null);
+      payload = {
+        status: parsed.plan.status,
+        summary: parsed.plan.summary,
+        steps: parsed.plan.steps as PlanStep[],
+        assertions: parsed.plan.assertions as PlanAssertion[],
+      };
+      setPlan(payload);
+    } else {
+      payload = planPayloadFromForm();
+      setPlanText(planToEditorText(payload));
     }
-    setJsonError(null);
     try {
       const res = await fetch(
         `/api/jobs/${encodeURIComponent(jobId)}/plans/${encodeURIComponent(planId)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ plan: parsed.plan }),
+          body: JSON.stringify({ plan: payload }),
         },
       );
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
         setMsg(
-          data?.error?.message || data?.error?.code || `Save failed (${res.status})`,
+          data?.error?.message ||
+            data?.error?.code ||
+            `Save failed (${res.status})`,
         );
         return;
       }
@@ -280,7 +458,9 @@ function CaseEditor({
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
         setMsg(
-          data?.error?.message || data?.error?.code || `Re-run failed (${res.status})`,
+          data?.error?.message ||
+            data?.error?.code ||
+            `Re-run failed (${res.status})`,
         );
         return;
       }
@@ -288,6 +468,59 @@ function CaseEditor({
       onSaved();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Re-run failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createLocator() {
+    const selector = locSelector.trim();
+    if (!selector) {
+      setMsg("Selector is required for a custom locator");
+      return;
+    }
+    setBusy("locator");
+    setMsg(null);
+    try {
+      const res = await fetch(
+        `/api/jobs/${encodeURIComponent(jobId)}/locators`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: locName.trim() || null,
+            strategy: locStrategy,
+            selector,
+            role: locRole.trim() || null,
+            accessible_name: locA11y.trim() || null,
+            page_id: locPageId.trim() || null,
+          }),
+        },
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok || !data.locator?.id) {
+        setMsg(
+          data?.error?.message ||
+            data?.error?.code ||
+            `Add locator failed (${res.status})`,
+        );
+        return;
+      }
+      const newId = String(data.locator.id);
+      if (bindStepIdx != null) {
+        updateStep(bindStepIdx, { locator_id: newId });
+      }
+      setLocName("");
+      setLocSelector("");
+      setLocRole("");
+      setLocA11y("");
+      setLocPageId("");
+      setAddLocatorOpen(false);
+      setBindStepIdx(null);
+      setMsg(`Locator added ${newId.slice(0, 8)}…`);
+      onLocatorsChanged();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Add locator failed");
     } finally {
       setBusy(null);
     }
@@ -312,19 +545,28 @@ function CaseEditor({
       {open && (
         <div className="case-editor">
           <p className="meta case-editor-hint">
-            Edit the <strong>structured plan JSON</strong> (steps, assertions,
-            locator UUIDs). Execution runs this plan — not Playwright scripts.
+            Edit steps &amp; locators (not Playwright scripts). Execution uses
+            catalog locator UUIDs only.
           </p>
 
           <div className="editor-tabs" role="tablist">
             <button
               type="button"
               role="tab"
-              aria-selected={tab === "plan"}
-              className={`editor-tab${tab === "plan" ? " active" : ""}`}
-              onClick={() => setTab("plan")}
+              aria-selected={tab === "form"}
+              className={`editor-tab${tab === "form" ? " active" : ""}`}
+              onClick={() => switchTab("form")}
             >
-              Plan JSON
+              Edit steps
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "json"}
+              className={`editor-tab${tab === "json" ? " active" : ""}`}
+              onClick={() => switchTab("json")}
+            >
+              Advanced JSON
             </button>
             {hasSource ? (
               <button
@@ -332,17 +574,331 @@ function CaseEditor({
                 role="tab"
                 aria-selected={tab === "source"}
                 className={`editor-tab${tab === "source" ? " active" : ""}`}
-                onClick={() => setTab("source")}
+                onClick={() => switchTab("source")}
               >
                 Playwright source (read-only)
               </button>
             ) : null}
           </div>
 
-          {tab === "plan" ? (
+          {tab === "form" ? (
+            <>
+              <label className="field">
+                <span>Summary</span>
+                <input
+                  value={plan.summary ?? ""}
+                  disabled={busy !== null}
+                  onChange={(e) =>
+                    setPlan((p) => ({ ...p, summary: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Plan status</span>
+                <select
+                  value={plan.status === "blocked" ? "blocked" : "ready"}
+                  disabled={busy !== null}
+                  onChange={(e) =>
+                    setPlan((p) => ({ ...p, status: e.target.value }))
+                  }
+                >
+                  <option value="ready">ready</option>
+                  <option value="blocked">blocked</option>
+                </select>
+                <span className="hint">
+                  Save re-validates: interactive steps without a locator become
+                  blocked.
+                </span>
+              </label>
+
+              <div className="steps-head">
+                <strong>Steps</strong>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    setPlan((p) => ({
+                      ...p,
+                      steps: [...p.steps, emptyStep(p.steps.length + 1)],
+                    }))
+                  }
+                >
+                  Add step
+                </button>
+              </div>
+              {plan.steps.length === 0 ? (
+                <p className="meta">No steps yet.</p>
+              ) : (
+                plan.steps.map((s, idx) => (
+                  <div key={idx} className="step-row">
+                    <span className="step-ord">{idx + 1}</span>
+                    <select
+                      aria-label={`Step ${idx + 1} action`}
+                      value={s.action || "click"}
+                      disabled={busy !== null}
+                      onChange={(e) =>
+                        updateStep(idx, { action: e.target.value })
+                      }
+                    >
+                      {STEP_ACTIONS.map((a) => (
+                        <option key={a} value={a}>
+                          {a}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label={`Step ${idx + 1} description`}
+                      placeholder="Description"
+                      value={s.description ?? ""}
+                      disabled={busy !== null}
+                      onChange={(e) =>
+                        updateStep(idx, { description: e.target.value })
+                      }
+                    />
+                    <select
+                      aria-label={`Step ${idx + 1} locator`}
+                      value={s.locator_id || ""}
+                      disabled={busy !== null}
+                      onChange={(e) =>
+                        updateStep(idx, {
+                          locator_id: e.target.value || null,
+                        })
+                      }
+                    >
+                      <option value="">No locator</option>
+                      {locators.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {locatorLabel(l)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label={`Step ${idx + 1} value`}
+                      placeholder="Value"
+                      value={s.value ?? ""}
+                      disabled={busy !== null}
+                      onChange={(e) =>
+                        updateStep(idx, { value: e.target.value })
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      title="Add custom locator for this step"
+                      disabled={busy !== null}
+                      onClick={() => {
+                        setBindStepIdx(idx);
+                        setAddLocatorOpen(true);
+                      }}
+                    >
+                      + loc
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={busy !== null}
+                      onClick={() =>
+                        setPlan((p) => ({
+                          ...p,
+                          steps: p.steps.filter((_, i) => i !== idx),
+                        }))
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+
+              <div className="steps-head">
+                <strong>Assertions</strong>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    setPlan((p) => ({
+                      ...p,
+                      assertions: [...p.assertions, emptyAssertion()],
+                    }))
+                  }
+                >
+                  Add assertion
+                </button>
+              </div>
+              {plan.assertions.map((a, idx) => (
+                <div key={idx} className="step-row assertion-row">
+                  <span className="step-ord">{idx + 1}</span>
+                  <input
+                    aria-label={`Assertion ${idx + 1} type`}
+                    placeholder="type"
+                    value={a.type ?? ""}
+                    disabled={busy !== null}
+                    onChange={(e) =>
+                      updateAssertion(idx, { type: e.target.value })
+                    }
+                  />
+                  <input
+                    aria-label={`Assertion ${idx + 1} expected`}
+                    placeholder="expected"
+                    value={a.expected ?? ""}
+                    disabled={busy !== null}
+                    onChange={(e) =>
+                      updateAssertion(idx, { expected: e.target.value })
+                    }
+                  />
+                  <select
+                    aria-label={`Assertion ${idx + 1} locator`}
+                    value={a.locator_id || ""}
+                    disabled={busy !== null}
+                    onChange={(e) =>
+                      updateAssertion(idx, {
+                        locator_id: e.target.value || null,
+                      })
+                    }
+                  >
+                    <option value="">No locator</option>
+                    {locators.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {locatorLabel(l)}
+                      </option>
+                    ))}
+                  </select>
+                  <span />
+                  <span />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      setPlan((p) => ({
+                        ...p,
+                        assertions: p.assertions.filter((_, i) => i !== idx),
+                      }))
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+
+              <div className="steps-head">
+                <strong>Custom locator</strong>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setBindStepIdx(null);
+                    setAddLocatorOpen((v) => !v);
+                  }}
+                >
+                  {addLocatorOpen ? "Cancel" : "Add custom locator"}
+                </button>
+              </div>
+              {addLocatorOpen ? (
+                <div className="locator-create form">
+                  <p className="meta case-editor-hint">
+                    Inserts into the job locator catalog, then appears in
+                    dropdowns
+                    {bindStepIdx != null
+                      ? ` (will bind to step ${bindStepIdx + 1})`
+                      : ""}
+                    .
+                  </p>
+                  <div className="field-row">
+                    <label>
+                      Strategy
+                      <select
+                        value={locStrategy}
+                        disabled={busy !== null}
+                        onChange={(e) =>
+                          setLocStrategy(
+                            e.target.value as (typeof LOCATOR_STRATEGIES)[number],
+                          )
+                        }
+                      >
+                        {LOCATOR_STRATEGIES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Selector
+                      <input
+                        required
+                        value={locSelector}
+                        disabled={busy !== null}
+                        onChange={(e) => setLocSelector(e.target.value)}
+                        placeholder="email-input"
+                      />
+                    </label>
+                  </div>
+                  <div className="field-row">
+                    <label>
+                      Name
+                      <input
+                        value={locName}
+                        disabled={busy !== null}
+                        onChange={(e) => setLocName(e.target.value)}
+                        placeholder="email"
+                      />
+                    </label>
+                    <label>
+                      Role
+                      <input
+                        value={locRole}
+                        disabled={busy !== null}
+                        onChange={(e) => setLocRole(e.target.value)}
+                        placeholder="button"
+                      />
+                    </label>
+                  </div>
+                  <div className="field-row">
+                    <label>
+                      Accessible name
+                      <input
+                        value={locA11y}
+                        disabled={busy !== null}
+                        onChange={(e) => setLocA11y(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Page (optional)
+                      <select
+                        value={locPageId}
+                        disabled={busy !== null}
+                        onChange={(e) => setLocPageId(e.target.value)}
+                      >
+                        <option value="">None</option>
+                        {pageIds.map((id) => (
+                          <option key={id} value={id}>
+                            {id.slice(0, 8)}…
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy !== null || !locSelector.trim()}
+                    onClick={() => void createLocator()}
+                  >
+                    {busy === "locator" ? "Adding…" : "Create locator"}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {tab === "json" ? (
             <>
               <div className="steps-head">
-                <strong>Structured plan</strong>
+                <strong>Structured plan JSON</strong>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
@@ -364,39 +920,15 @@ function CaseEditor({
                   {jsonError}
                 </p>
               ) : null}
-
-              {locators.length > 0 ? (
-                <label className="field">
-                  <span>Locator catalog (copy UUID into plan JSON)</span>
-                  <select
-                    defaultValue=""
-                    disabled={busy !== null}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (!id) return;
-                      void navigator.clipboard?.writeText(id).then(
-                        () => setMsg(`Copied locator ${id.slice(0, 8)}…`),
-                        () => setMsg(`Locator id: ${id}`),
-                      );
-                      e.target.value = "";
-                    }}
-                  >
-                    <option value="">Select to copy locator_id…</option>
-                    {locators.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {locatorLabel(l)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
             </>
-          ) : (
+          ) : null}
+
+          {tab === "source" ? (
             <>
               <p className="meta case-editor-hint">
                 Optional review/export artifact only.{" "}
                 <strong>v1 execution ignores this source</strong> and uses the
-                structured plan above.
+                structured plan. Script edit/re-run is v2 backlog.
               </p>
               <CodeEditor
                 value={row.playwright_source || ""}
@@ -406,13 +938,13 @@ function CaseEditor({
                 language="typescript"
               />
             </>
-          )}
+          ) : null}
 
           <div className="actions" style={{ marginTop: "0.75rem" }}>
             <button
               type="button"
               className="btn"
-              disabled={busy !== null || tab !== "plan"}
+              disabled={busy !== null || tab === "source"}
               onClick={() => void save()}
             >
               {busy === "save" ? "Saving…" : "Save plan"}
@@ -535,7 +1067,9 @@ export default function JobPage() {
       setNewSteps("");
       setNewExpected("");
       setCreateOpen(false);
-      setOpsNote("Case created (blocked plan stub). Edit plan JSON to map locators.");
+      setOpsNote(
+        "Case created (blocked plan stub). Map steps & locators in Edit steps.",
+      );
       await load();
     } catch (e) {
       setOpsNote(e instanceof Error ? e.message : "Create failed");
@@ -672,18 +1206,12 @@ export default function JobPage() {
         </div>
         {counts ? (
           <div className="job-counts" aria-label="Result counts">
-            <span className="count-chip ok">
-              {counts.passed ?? 0} passed
-            </span>
+            <span className="count-chip ok">{counts.passed ?? 0} passed</span>
             <span className="count-chip fail">
               {counts.failed ?? 0} failed
             </span>
-            <span className="count-chip">
-              {counts.error ?? 0} error
-            </span>
-            <span className="count-chip">
-              {counts.skipped ?? 0} skipped
-            </span>
+            <span className="count-chip">{counts.error ?? 0} error</span>
+            <span className="count-chip">{counts.skipped ?? 0} skipped</span>
             {job?.result_summary?.pass_rate != null ? (
               <span className="count-chip">
                 {(job.result_summary.pass_rate * 100).toFixed(0)}% pass
@@ -696,13 +1224,21 @@ export default function JobPage() {
       {opsNote ? <p className="footer-note">{opsNote}</p> : null}
 
       {error && (
-        <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
+        <div
+          className="alert alert-error"
+          role="alert"
+          style={{ marginBottom: "1rem" }}
+        >
           {error}
         </div>
       )}
 
       {job?.error && (
-        <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
+        <div
+          className="alert alert-error"
+          role="alert"
+          style={{ marginBottom: "1rem" }}
+        >
           {job.error.code ? <strong>{job.error.code}: </strong> : null}
           {job.error.message ?? "Job failed"}
         </div>
@@ -848,7 +1384,7 @@ export default function JobPage() {
       <section className="job-panel" aria-labelledby="cases-heading">
         <div className="jobs-head">
           <h2 id="cases-heading" className="section-title">
-            Cases (structured plan editor)
+            Cases (edit steps &amp; locators)
           </h2>
           <button
             type="button"
@@ -859,9 +1395,9 @@ export default function JobPage() {
           </button>
         </div>
         <p className="meta" style={{ marginBottom: "0.75rem" }}>
-          Edit structured plan JSON (locator UUIDs only), save, then re-run this
-          case. Optional Playwright source is review-only — execution ignores it
-          in v1.
+          Form editor binds catalog locators; Advanced JSON is optional. Save,
+          then Re-run this case. Playwright source (if present) is review-only —
+          v1 does not execute scripts.
         </p>
 
         {createOpen ? (
@@ -916,6 +1452,7 @@ export default function JobPage() {
                 row={c}
                 locators={locators}
                 onSaved={() => void load()}
+                onLocatorsChanged={() => void load()}
               />
             ))}
           </ul>
