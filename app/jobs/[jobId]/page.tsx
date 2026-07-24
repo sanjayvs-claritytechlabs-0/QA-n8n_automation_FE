@@ -583,33 +583,37 @@ function CaseEditor({
 
           {tab === "form" ? (
             <>
-              <label className="field">
-                <span>Summary</span>
-                <input
-                  value={plan.summary ?? ""}
-                  disabled={busy !== null}
-                  onChange={(e) =>
-                    setPlan((p) => ({ ...p, summary: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>Plan status</span>
-                <select
-                  value={plan.status === "blocked" ? "blocked" : "ready"}
-                  disabled={busy !== null}
-                  onChange={(e) =>
-                    setPlan((p) => ({ ...p, status: e.target.value }))
-                  }
-                >
-                  <option value="ready">ready</option>
-                  <option value="blocked">blocked</option>
-                </select>
-                <span className="hint">
-                  Save re-validates: interactive steps without a locator become
-                  blocked.
-                </span>
-              </label>
+              <div className="plan-meta-fields">
+                <label className="field">
+                  <span>Summary</span>
+                  <span className="hint">Short plan description for this case</span>
+                  <input
+                    value={plan.summary ?? ""}
+                    disabled={busy !== null}
+                    placeholder="e.g. Login with valid credentials"
+                    onChange={(e) =>
+                      setPlan((p) => ({ ...p, summary: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Plan status</span>
+                  <span className="hint">
+                    Save re-validates: interactive steps without a locator become
+                    blocked
+                  </span>
+                  <select
+                    value={plan.status === "blocked" ? "blocked" : "ready"}
+                    disabled={busy !== null}
+                    onChange={(e) =>
+                      setPlan((p) => ({ ...p, status: e.target.value }))
+                    }
+                  >
+                    <option value="ready">ready — executable</option>
+                    <option value="blocked">blocked — missing locators</option>
+                  </select>
+                </label>
+              </div>
 
               <div className="steps-head">
                 <strong>Steps</strong>
@@ -628,85 +632,104 @@ function CaseEditor({
                 </button>
               </div>
               {plan.steps.length === 0 ? (
-                <p className="meta">No steps yet.</p>
+                <p className="meta">No steps yet. Add a step to map actions and locators.</p>
               ) : (
                 plan.steps.map((s, idx) => (
-                  <div key={idx} className="step-row">
-                    <span className="step-ord">{idx + 1}</span>
-                    <select
-                      aria-label={`Step ${idx + 1} action`}
-                      value={s.action || "click"}
-                      disabled={busy !== null}
-                      onChange={(e) =>
-                        updateStep(idx, { action: e.target.value })
-                      }
-                    >
-                      {STEP_ACTIONS.map((a) => (
-                        <option key={a} value={a}>
-                          {a}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      aria-label={`Step ${idx + 1} description`}
-                      placeholder="Description"
-                      value={s.description ?? ""}
-                      disabled={busy !== null}
-                      onChange={(e) =>
-                        updateStep(idx, { description: e.target.value })
-                      }
-                    />
-                    <select
-                      aria-label={`Step ${idx + 1} locator`}
-                      value={s.locator_id || ""}
-                      disabled={busy !== null}
-                      onChange={(e) =>
-                        updateStep(idx, {
-                          locator_id: e.target.value || null,
-                        })
-                      }
-                    >
-                      <option value="">No locator</option>
-                      {locators.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {locatorLabel(l)}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      aria-label={`Step ${idx + 1} value`}
-                      placeholder="Value"
-                      value={s.value ?? ""}
-                      disabled={busy !== null}
-                      onChange={(e) =>
-                        updateStep(idx, { value: e.target.value })
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      title="Add custom locator for this step"
-                      disabled={busy !== null}
-                      onClick={() => {
-                        setBindStepIdx(idx);
-                        setAddLocatorOpen(true);
-                      }}
-                    >
-                      + loc
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={busy !== null}
-                      onClick={() =>
-                        setPlan((p) => ({
-                          ...p,
-                          steps: p.steps.filter((_, i) => i !== idx),
-                        }))
-                      }
-                    >
-                      ×
-                    </button>
+                  <div key={idx} className="step-block">
+                    <div className="step-block-head">
+                      <strong className="step-block-title">Step {idx + 1}</strong>
+                      <div className="step-block-actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          title="Add custom locator for this step"
+                          disabled={busy !== null}
+                          onClick={() => {
+                            setBindStepIdx(idx);
+                            setAddLocatorOpen(true);
+                          }}
+                        >
+                          Add custom locator
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          aria-label={`Remove step ${idx + 1}`}
+                          disabled={busy !== null}
+                          onClick={() =>
+                            setPlan((p) => ({
+                              ...p,
+                              steps: p.steps.filter((_, i) => i !== idx),
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    <div className="step-fields">
+                      <label className="field">
+                        <span>Action</span>
+                        <select
+                          value={s.action || "click"}
+                          disabled={busy !== null}
+                          onChange={(e) =>
+                            updateStep(idx, { action: e.target.value })
+                          }
+                        >
+                          {STEP_ACTIONS.map((a) => (
+                            <option key={a} value={a}>
+                              {a}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Description</span>
+                        <input
+                          placeholder="e.g. Enter email address"
+                          value={s.description ?? ""}
+                          disabled={busy !== null}
+                          onChange={(e) =>
+                            updateStep(idx, { description: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="field step-field-locator">
+                        <span>Locator</span>
+                        <select
+                          value={s.locator_id || ""}
+                          disabled={busy !== null}
+                          onChange={(e) =>
+                            updateStep(idx, {
+                              locator_id: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">No locator (goto / wait OK)</option>
+                          {locators.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {locatorLabel(l)}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="hint">
+                          Pick from catalog or use Add custom locator
+                        </span>
+                      </label>
+                      <label className="field">
+                        <span>Value</span>
+                        <span className="hint">For fill, select, press</span>
+                        <input
+                          placeholder="e.g. user@example.com"
+                          value={s.value ?? ""}
+                          disabled={busy !== null}
+                          onChange={(e) =>
+                            updateStep(idx, { value: e.target.value })
+                          }
+                        />
+                      </label>
+                    </div>
                   </div>
                 ))
               )}
@@ -727,61 +750,77 @@ function CaseEditor({
                   Add assertion
                 </button>
               </div>
-              {plan.assertions.map((a, idx) => (
-                <div key={idx} className="step-row assertion-row">
-                  <span className="step-ord">{idx + 1}</span>
-                  <input
-                    aria-label={`Assertion ${idx + 1} type`}
-                    placeholder="type"
-                    value={a.type ?? ""}
-                    disabled={busy !== null}
-                    onChange={(e) =>
-                      updateAssertion(idx, { type: e.target.value })
-                    }
-                  />
-                  <input
-                    aria-label={`Assertion ${idx + 1} expected`}
-                    placeholder="expected"
-                    value={a.expected ?? ""}
-                    disabled={busy !== null}
-                    onChange={(e) =>
-                      updateAssertion(idx, { expected: e.target.value })
-                    }
-                  />
-                  <select
-                    aria-label={`Assertion ${idx + 1} locator`}
-                    value={a.locator_id || ""}
-                    disabled={busy !== null}
-                    onChange={(e) =>
-                      updateAssertion(idx, {
-                        locator_id: e.target.value || null,
-                      })
-                    }
-                  >
-                    <option value="">No locator</option>
-                    {locators.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {locatorLabel(l)}
-                      </option>
-                    ))}
-                  </select>
-                  <span />
-                  <span />
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={busy !== null}
-                    onClick={() =>
-                      setPlan((p) => ({
-                        ...p,
-                        assertions: p.assertions.filter((_, i) => i !== idx),
-                      }))
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+              {plan.assertions.length === 0 ? (
+                <p className="meta">No assertions yet.</p>
+              ) : (
+                plan.assertions.map((a, idx) => (
+                  <div key={idx} className="step-block assertion-block">
+                    <div className="step-block-head">
+                      <strong className="step-block-title">
+                        Assertion {idx + 1}
+                      </strong>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        aria-label={`Remove assertion ${idx + 1}`}
+                        disabled={busy !== null}
+                        onClick={() =>
+                          setPlan((p) => ({
+                            ...p,
+                            assertions: p.assertions.filter((_, i) => i !== idx),
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="step-fields assertion-fields">
+                      <label className="field">
+                        <span>Type</span>
+                        <input
+                          placeholder="e.g. url_contains"
+                          value={a.type ?? ""}
+                          disabled={busy !== null}
+                          onChange={(e) =>
+                            updateAssertion(idx, { type: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Expected</span>
+                        <input
+                          placeholder="e.g. /dashboard"
+                          value={a.expected ?? ""}
+                          disabled={busy !== null}
+                          onChange={(e) =>
+                            updateAssertion(idx, { expected: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="field step-field-locator">
+                        <span>Locator</span>
+                        <span className="hint">Optional for element asserts</span>
+                        <select
+                          value={a.locator_id || ""}
+                          disabled={busy !== null}
+                          onChange={(e) =>
+                            updateAssertion(idx, {
+                              locator_id: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">No locator</option>
+                          {locators.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {locatorLabel(l)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                ))
+              )}
 
               <div className="steps-head">
                 <strong>Custom locator</strong>
@@ -798,18 +837,19 @@ function CaseEditor({
                 </button>
               </div>
               {addLocatorOpen ? (
-                <div className="locator-create form">
+                <div className="locator-create">
                   <p className="meta case-editor-hint">
-                    Inserts into the job locator catalog, then appears in
-                    dropdowns
+                    Adds a row to this job&apos;s locator catalog (then selectable
+                    above)
                     {bindStepIdx != null
-                      ? ` (will bind to step ${bindStepIdx + 1})`
+                      ? ` — will bind to Step ${bindStepIdx + 1}`
                       : ""}
                     .
                   </p>
                   <div className="field-row">
-                    <label>
-                      Strategy
+                    <label className="field">
+                      <span>Strategy</span>
+                      <span className="hint">Prefer testid or role</span>
                       <select
                         value={locStrategy}
                         disabled={busy !== null}
@@ -826,48 +866,54 @@ function CaseEditor({
                         ))}
                       </select>
                     </label>
-                    <label>
-                      Selector
+                    <label className="field">
+                      <span>Selector</span>
+                      <span className="hint">Required — Playwright target</span>
                       <input
                         required
                         value={locSelector}
                         disabled={busy !== null}
                         onChange={(e) => setLocSelector(e.target.value)}
-                        placeholder="email-input"
+                        placeholder="e.g. email-input"
                       />
                     </label>
                   </div>
                   <div className="field-row">
-                    <label>
-                      Name
+                    <label className="field">
+                      <span>Name</span>
+                      <span className="hint">Short label in dropdowns</span>
                       <input
                         value={locName}
                         disabled={busy !== null}
                         onChange={(e) => setLocName(e.target.value)}
-                        placeholder="email"
+                        placeholder="e.g. email"
                       />
                     </label>
-                    <label>
-                      Role
+                    <label className="field">
+                      <span>Role</span>
+                      <span className="hint">For strategy = role</span>
                       <input
                         value={locRole}
                         disabled={busy !== null}
                         onChange={(e) => setLocRole(e.target.value)}
-                        placeholder="button"
+                        placeholder="e.g. button"
                       />
                     </label>
                   </div>
                   <div className="field-row">
-                    <label>
-                      Accessible name
+                    <label className="field">
+                      <span>Accessible name</span>
+                      <span className="hint">Visible name / aria label</span>
                       <input
                         value={locA11y}
                         disabled={busy !== null}
                         onChange={(e) => setLocA11y(e.target.value)}
+                        placeholder="e.g. Sign in"
                       />
                     </label>
-                    <label>
-                      Page (optional)
+                    <label className="field">
+                      <span>Page</span>
+                      <span className="hint">Optional page id from catalog</span>
                       <select
                         value={locPageId}
                         disabled={busy !== null}
@@ -1402,26 +1448,29 @@ export default function JobPage() {
 
         {createOpen ? (
           <form
-            className="form"
+            className="form create-case-form"
             style={{ marginBottom: "1rem" }}
             onSubmit={(e) => {
               e.preventDefault();
               void createCase();
             }}
           >
-            <label>
-              Title
+            <label className="field">
+              <span>Title</span>
+              <span className="hint">Required — shown in the cases list</span>
               <input
                 required
                 maxLength={500}
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Manual smoke — Learn more"
+                placeholder="e.g. Manual smoke — Learn more"
               />
             </label>
-            <label>
-              Steps
-              <span className="hint">One per line, or pipe-separated</span>
+            <label className="field">
+              <span>Steps</span>
+              <span className="hint">
+                One per line, or pipe-separated. Map locators after create.
+              </span>
               <textarea
                 value={newSteps}
                 onChange={(e) => setNewSteps(e.target.value)}
@@ -1429,12 +1478,13 @@ export default function JobPage() {
                 placeholder={"1. Open home\n2. Click Learn more"}
               />
             </label>
-            <label>
-              Expected
+            <label className="field">
+              <span>Expected</span>
+              <span className="hint">Optional outcome for this case</span>
               <input
                 value={newExpected}
                 onChange={(e) => setNewExpected(e.target.value)}
-                placeholder="Learn more link works"
+                placeholder="e.g. Learn more link works"
               />
             </label>
             <button type="submit" disabled={createBusy || !newTitle.trim()}>

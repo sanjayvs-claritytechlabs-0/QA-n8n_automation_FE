@@ -928,6 +928,31 @@ a.btn {
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.case-editor .field > span:first-child {
+  font-size: 0.8rem;
+}
+
+.case-editor .field .hint {
+  order: 3;
+  margin-top: -0.05rem;
+}
+
+.case-editor .field input,
+.case-editor .field select,
+.case-editor .field textarea {
+  font-weight: 400;
+  order: 2;
+}
+
+.plan-meta-fields {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0.75rem;
 }
 
 .steps-head {
@@ -935,18 +960,70 @@ a.btn {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-top: 0.25rem;
+  margin-top: 0.45rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+}
+
+.plan-meta-fields + .steps-head {
+  margin-top: 0.15rem;
 }
 
 .steps-head strong {
   font-size: 0.85rem;
 }
 
-.step-row {
-  display: grid;
-  grid-template-columns: 1.5rem 6.5rem 1fr 1.4fr 0.8fr auto auto;
-  gap: 0.4rem;
+.step-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.step-block-head {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.step-block-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.step-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.step-fields {
+  display: grid;
+  grid-template-columns: 7rem 1fr 1.35fr 0.9fr;
+  gap: 0.55rem 0.65rem;
+  align-items: start;
+}
+
+.assertion-fields {
+  grid-template-columns: 1fr 1fr 1.2fr;
+}
+
+.step-field-locator {
+  min-width: 0;
+}
+
+.case-editor .step-fields .field input,
+.case-editor .step-fields .field select {
+  min-width: 0;
+  font-size: 0.8rem;
+  height: 2.15rem;
+  padding: 0 0.45rem;
 }
 
 .locator-create {
@@ -959,34 +1036,32 @@ a.btn {
   background: var(--bg);
 }
 
-.assertion-row {
-  grid-template-columns: 1.5rem 6.5rem 1fr 1.4fr 0.8fr auto auto;
+.locator-create .field {
+  font-size: 0.85rem;
 }
 
-.step-row select,
-.step-row input {
-  min-width: 0;
-  font-size: 0.8rem;
-  height: 2.15rem;
-  padding: 0 0.45rem;
+.create-case-form .field {
+  font-weight: 600;
 }
 
-.step-ord {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--muted);
-  text-align: center;
+@media (max-width: 900px) {
+  .step-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .assertion-fields {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 720px) {
-  .step-row {
-    grid-template-columns: 1.5rem 1fr;
+  .plan-meta-fields {
+    grid-template-columns: 1fr;
   }
 
-  .step-row select,
-  .step-row input,
-  .step-row .btn {
-    grid-column: 2;
+  .step-fields,
+  .assertion-fields {
+    grid-template-columns: 1fr;
   }
 
   .job-sticky {
