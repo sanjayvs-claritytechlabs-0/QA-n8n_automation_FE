@@ -37,6 +37,7 @@ export function defaultJobOptions(
     crawl_max_depth?: number;
     crawl_max_pages?: number;
     browser?: string;
+    human_review_enabled?: boolean;
   },
 ) {
   const envProvider = (env("AI_PROVIDER") || "gemini").toLowerCase();
@@ -90,6 +91,9 @@ export function defaultJobOptions(
   }
   if ((env("CAPTURE_SCREENSHOT") || "true").toLowerCase() === "false") {
     options.capture_screenshot_on_failure = false;
+  }
+  if (overrides?.human_review_enabled === true) {
+    options.human_review_enabled = true;
   }
   return options;
 }

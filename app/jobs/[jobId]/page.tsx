@@ -1083,9 +1083,9 @@ export default function JobPage() {
   const [newExpected, setNewExpected] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
   const [opsNote, setOpsNote] = useState<string | null>(null);
-  const [opsBusy, setOpsBusy] = useState<"rerun-job" | "delete-job" | null>(
-    null,
-  );
+  const [opsBusy, setOpsBusy] = useState<
+    "rerun-job" | "delete-job" | "approve" | "reject" | null
+  >(null);
 
   const load = useCallback(async () => {
     try {
@@ -1171,6 +1171,47 @@ export default function JobPage() {
       setOpsNote(e instanceof Error ? e.message : "Create failed");
     } finally {
       setCreateBusy(false);
+    }
+  }
+
+  async function reviewAction(action: "approve" | "reject") {
+    if (action === "reject") {
+      const ok = window.confirm(
+        "Reject this job? Pipeline will fail with HUMAN_REVIEW_REJECTED and notifications will run.",
+      );
+      if (!ok) return;
+    }
+    setOpsBusy(action === "approve" ? "approve" : "reject");
+    setOpsNote(null);
+    try {
+      const res = await fetch(
+        `/api/jobs/${encodeURIComponent(jobId)}/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        },
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setOpsNote(
+          data?.error?.message ||
+            data?.message ||
+            `Review ${action} failed (${res.status})`,
+        );
+        return;
+      }
+      setOpsNote(
+        action === "approve"
+          ? "Approved — resuming Playwright execution…"
+          : "Rejected — notifications will run.",
+      );
+      setPolling(true);
+      await load();
+    } catch (e) {
+      setOpsNote(e instanceof Error ? e.message : `Review ${action} failed`);
+    } finally {
+      setOpsBusy(null);
     }
   }
 
@@ -1318,6 +1359,38 @@ export default function JobPage() {
       </div>
 
       {opsNote ? <p className="footer-note">{opsNote}</p> : null}
+
+      {job?.status === "waiting_for_review" ? (
+        <div
+          className="alert alert-warn"
+          role="status"
+          style={{ marginBottom: "1rem" }}
+        >
+          <p style={{ margin: "0 0 0.65rem" }}>
+            <strong>Waiting for human review.</strong> Edit plans below (Edit
+            steps), then Approve to run Playwright. Blocked plans are skipped at
+            execution — approve is allowed even if some cases are not ready.
+          </p>
+          <div className="actions" style={{ marginTop: 0 }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={opsBusy !== null}
+              onClick={() => void reviewAction("approve")}
+            >
+              {opsBusy === "approve" ? "Approving…" : "Approve & continue"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={opsBusy !== null}
+              onClick={() => void reviewAction("reject")}
+            >
+              {opsBusy === "reject" ? "Rejecting…" : "Reject"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {error && (
         <div

@@ -21,6 +21,7 @@ Minimal Next.js (App Router) UI that starts QA jobs and polls status via **serve
 | `/projects` list + delete | `GET /api/projects` · `DELETE /api/projects/[id]` → n8n list/delete + FE S3 prefix cleanup |
 | `/projects/[id]` jobs + re-run/delete | `GET /api/projects/[id]` · job delete/re-run proxies |
 | `/jobs/[jobId]` polls every 4s | `GET /api/jobs/[jobId]` → `GET …/webhook/qa/job-status?job_id=` |
+| Approve / reject human review | `POST /api/jobs/[jobId]/review` → `POST …/webhook/qa/jobs/review` |
 | Save structured plan | `POST /api/jobs/[jobId]/plans/[planId]` → `POST …/webhook/qa/plans/update` |
 | Re-run one case | `POST /api/jobs/[jobId]/plans/[planId]/rerun` → `POST …/webhook/qa/cases/re-run` |
 | Add custom locator | `POST /api/jobs/[jobId]/locators` → `POST …/webhook/qa/locators/create` |
@@ -52,6 +53,7 @@ Start-form fields (sent in Create-or-Start `options`):
 
 - `mode`, `ai_provider`, `ai_model`
 - `crawl_max_depth`, `crawl_max_pages` (UI; env `CRAWL_MAX_*` = defaults only)
+- `human_review_enabled` (checkbox — pause after AI plans for edit + Approve/Reject)
 
 Still injected from server env only (not the form):
 
@@ -61,6 +63,15 @@ Still injected from server env only (not the form):
 - optional `browser`, `artifact_base_url`
 
 AI API keys are **never** sent from this app (n8n Gemini/OpenAI credentials own them).
+
+### Human review (optional)
+
+1. Check **Require human review before execution** on Start a job.
+2. After `ai_test_generation`, job status → `waiting_for_review` (stage `human_review` running).
+3. On the job page: edit plans via **Edit steps**, then **Approve & continue** (resumes Playwright) or **Reject** (`HUMAN_REVIEW_REJECTED` + notifications).
+4. Approve is allowed even if some plans are blocked — Execution skips non-ready plans.
+
+Requires published n8n workflows: **QA — Job Orchestrator** (`b4QgD415Jg1c2dd6`) + **QA — Job Review** (`faS5lRvJiio5A7n5`, `POST /webhook/qa/jobs/review`).
 
 Optional server env (injected into Create-or-Start `options`):
 

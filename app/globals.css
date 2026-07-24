@@ -428,6 +428,24 @@ a.btn {
   color: var(--fail);
 }
 
+.alert-warn {
+  border-color: #fcd34d;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.checkbox-row input[type="checkbox"] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
 /* —— Jobs table —— */
 .jobs-section {
   margin-top: 2.25rem;

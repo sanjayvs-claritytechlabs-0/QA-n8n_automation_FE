@@ -23,6 +23,7 @@ type Body = {
   ai_model?: string;
   crawl_max_depth?: number;
   crawl_max_pages?: number;
+  human_review_enabled?: boolean;
 };
 
 type ParsedStart = {
@@ -37,7 +38,17 @@ type ParsedStart = {
   ai_model?: string;
   crawl_max_depth?: number;
   crawl_max_pages?: number;
+  human_review_enabled?: boolean;
 };
+
+function asBool(v: unknown): boolean {
+  if (v === true || v === 1) return true;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "true" || s === "1" || s === "on" || s === "yes";
+  }
+  return false;
+}
 
 function parseOptionalInt(v: unknown): number | undefined {
   if (v == null || v === "") return undefined;
@@ -152,6 +163,7 @@ async function parseStartRequest(request: Request): Promise<
     const ai_model = String(form.get("ai_model") ?? "").trim() || undefined;
     const crawl_max_depth = parseOptionalInt(form.get("crawl_max_depth"));
     const crawl_max_pages = parseOptionalInt(form.get("crawl_max_pages"));
+    const human_review_enabled = asBool(form.get("human_review_enabled"));
 
     let csv_text = "";
     let csv_filename: string | undefined;
@@ -203,6 +215,7 @@ async function parseStartRequest(request: Request): Promise<
         ai_model,
         crawl_max_depth,
         crawl_max_pages,
+        human_review_enabled,
       },
     };
   }
@@ -252,6 +265,7 @@ async function parseStartRequest(request: Request): Promise<
       ai_model: body.ai_model?.trim() || undefined,
       crawl_max_depth: parseOptionalInt(body.crawl_max_depth),
       crawl_max_pages: parseOptionalInt(body.crawl_max_pages),
+      human_review_enabled: asBool(body.human_review_enabled),
     },
   };
 }
@@ -272,6 +286,7 @@ export async function POST(request: Request) {
     ai_model,
     crawl_max_depth,
     crawl_max_pages,
+    human_review_enabled,
   } = parsed.data;
 
   if (!project_name) {
@@ -305,6 +320,7 @@ export async function POST(request: Request) {
       ai_model,
       crawl_max_depth,
       crawl_max_pages,
+      human_review_enabled,
     });
   } catch (e) {
     return jsonError(

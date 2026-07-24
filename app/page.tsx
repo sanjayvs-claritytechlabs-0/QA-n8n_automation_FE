@@ -39,6 +39,7 @@ export default function HomePage() {
   const [aiModel, setAiModel] = useState(defaultModelFor("gemini"));
   const [crawlDepth, setCrawlDepth] = useState(1);
   const [crawlPages, setCrawlPages] = useState(8);
+  const [humanReviewEnabled, setHumanReviewEnabled] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvFilename, setCsvFilename] = useState<string | null>(null);
   const [csvFileError, setCsvFileError] = useState<string | null>(null);
@@ -126,6 +127,9 @@ export default function HomePage() {
         fd.append("ai_model", aiModel);
         fd.append("crawl_max_depth", String(crawlDepth));
         fd.append("crawl_max_pages", String(crawlPages));
+        if (humanReviewEnabled) {
+          fd.append("human_review_enabled", "true");
+        }
         fd.append("csv_file", csvFile, csvFile.name);
         res = await fetch("/api/jobs", { method: "POST", body: fd });
       } else {
@@ -140,6 +144,7 @@ export default function HomePage() {
             ai_model: aiModel,
             crawl_max_depth: crawlDepth,
             crawl_max_pages: crawlPages,
+            human_review_enabled: humanReviewEnabled || undefined,
           }),
         });
       }
@@ -300,6 +305,22 @@ export default function HomePage() {
           Depth/pages still run Website Discovery + Locator Extraction in CSV
           mode (locators power the plan editor).
         </p>
+
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            name="human_review_enabled"
+            checked={humanReviewEnabled}
+            onChange={(e) => setHumanReviewEnabled(e.target.checked)}
+          />
+          <span>
+            Require human review before execution
+            <span className="hint" style={{ display: "block", marginTop: "0.2rem" }}>
+              After AI plans are ready, pause the job so you can edit steps, then
+              Approve &amp; continue (or Reject).
+            </span>
+          </span>
+        </label>
 
         {mode === "manual_csv" && (
           <fieldset className="field-group">
