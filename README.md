@@ -82,7 +82,7 @@ Home **Manual/CSV** mode: file upload only (no paste). Supported uploads:
 | Semicolon CSV (Excel EU) | Detected from header (more `;` than `,`) and normalized |
 | `.xlsx` / `.xls` | **First sheet only** → CSV via SheetJS in `POST /api/jobs` |
 
-Required header aliases (PRD 05): `title` (or name/test_case/…); optional `id`, `steps`, `expected`, `tags`. Server converts the file then sends `csv_text` to n8n Create-or-Start (n8n CSV Import dialect unchanged). Crawl depth/pages still run Discovery + Locators so the plan editor has a catalog.
+Required header: a **title** column (`title`, `TC_Name`, `test_name`, …). Optional: `id`/`TestCaseID`, `steps`/`Test_Step_Description`, `expected`/`Expected_Result`, `Target_URL`, `Test_Data`, `tags`. Server converts the file then sends `csv_text` to n8n Create-or-Start. In Manual/CSV mode, Discovery seeds from case URLs when present (avoids broad BFS into unrelated demos).
 
 ## Local setup
 

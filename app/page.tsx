@@ -305,8 +305,9 @@ export default function HomePage() {
             <label>
               Upload CSV / TSV / Excel
               <span className="hint">
-                Header row required. Columns: id, title, steps, expected, tags
-                (aliases ok). First sheet only for .xlsx/.xls. Tab or semicolon
+                Header row required. Columns: title, steps, expected
+                (aliases: TC_Name, TestCaseID, Target_URL, Test_Data,
+                …). First sheet only for .xlsx/.xls. Tab or semicolon
                 CSV is normalized server-side.
               </span>
               <input
