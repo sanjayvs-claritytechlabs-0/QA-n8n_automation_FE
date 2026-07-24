@@ -73,7 +73,7 @@ Optional server env (injected into Create-or-Start `options`):
 
 Job detail **Cases** defaults to a form editor for structured plans (`steps` / `assertions` / `summary` / `locator_id` dropdowns). **Advanced JSON** keeps Monaco for power users. Optional `playwright_source` is read-only — v1 execution ignores it (no script edit/re-run).
 
-Home **Manual/CSV** mode: file upload is primary; paste is optional. Supported uploads:
+Home **Manual/CSV** mode: file upload only (no paste). Supported uploads:
 
 | Type | Notes |
 |------|--------|

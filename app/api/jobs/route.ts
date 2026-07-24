@@ -292,7 +292,7 @@ export async function POST(request: Request) {
     return jsonError(
       400,
       "VALIDATION_ERROR",
-      "Upload a .csv / .tsv / .xlsx file or paste CSV text for Manual mode",
+      "Upload a .csv / .tsv / .xlsx file for Manual mode",
     );
   }
 

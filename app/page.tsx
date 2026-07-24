@@ -39,10 +39,8 @@ export default function HomePage() {
   const [aiModel, setAiModel] = useState(defaultModelFor("gemini"));
   const [crawlDepth, setCrawlDepth] = useState(1);
   const [crawlPages, setCrawlPages] = useState(8);
-  const [csvText, setCsvText] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvFilename, setCsvFilename] = useState<string | null>(null);
-  const [csvPasteOpen, setCsvPasteOpen] = useState(false);
   const [csvFileError, setCsvFileError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -105,15 +103,13 @@ export default function HomePage() {
     // Keep the File object — do not FileReader before submit (async race).
     setCsvFile(file);
     setCsvFilename(name);
-    setCsvText("");
-    setCsvPasteOpen(false);
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (mode === "manual_csv" && !csvFile && !csvText.trim()) {
-      setError("Upload a .csv / .tsv / .xlsx file or paste CSV text");
+    if (mode === "manual_csv" && !csvFile) {
+      setError("Upload a .csv / .tsv / .xlsx file for Manual mode");
       return;
     }
     setSubmitting(true);
@@ -138,11 +134,6 @@ export default function HomePage() {
             project_name: projectName,
             website_url: websiteUrl,
             mode,
-            csv_text: mode === "manual_csv" ? csvText : undefined,
-            csv_filename:
-              mode === "manual_csv"
-                ? csvFilename || "pasted.csv"
-                : undefined,
             ai_provider: aiProvider,
             ai_model: aiModel,
             crawl_max_depth: crawlDepth,
@@ -329,14 +320,10 @@ export default function HomePage() {
                 }}
               />
             </label>
-            {csvFilename ? (
+            {csvFilename && csvFile ? (
               <p className="meta" style={{ margin: 0 }}>
                 Ready: <code>{csvFilename}</code>
-                {csvFile
-                  ? ` · ${(csvFile.size / 1024).toFixed(1)} KB`
-                  : csvText.trim()
-                    ? ` · ${csvText.trim().split(/\r?\n/).filter(Boolean).length - 1} data row(s) approx`
-                    : null}
+                {` · ${(csvFile.size / 1024).toFixed(1)} KB`}
               </p>
             ) : null}
             {csvFileError ? (
@@ -344,35 +331,9 @@ export default function HomePage() {
                 {csvFileError}
               </p>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => setCsvPasteOpen((v) => !v)}
-            >
-              {csvPasteOpen ? "Hide paste" : "Paste CSV instead"}
-            </button>
-            {csvPasteOpen ? (
-              <label>
-                Paste CSV
-                <textarea
-                  name="csv_text"
-                  value={csvText}
-                  onChange={(e) => {
-                    setCsvText(e.target.value);
-                    setCsvFile(null);
-                    setCsvFilename(null);
-                  }}
-                  spellCheck={false}
-                  placeholder={
-                    "id,title,steps,expected\nTC-001,Open Learn more,Click Learn more,Link works"
-                  }
-                />
-              </label>
-            ) : null}
-            {!csvFile && !csvText.trim() ? (
+            {!csvFile ? (
               <span className="hint">
-                A non-empty .csv / .tsv / .xlsx (or paste) is required for Manual
-                mode.
+                A non-empty .csv / .tsv / .xlsx file is required for Manual mode.
               </span>
             ) : null}
           </fieldset>
