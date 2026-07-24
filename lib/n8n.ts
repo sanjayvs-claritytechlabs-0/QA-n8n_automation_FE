@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import {
   AI_MODELS,
+  AI_MODEL_OPTIONS,
   defaultModelFor,
   type AiProvider,
   type Mode,
 } from "@/lib/ai-options";
 
 export type { Mode, AiProvider };
-export { AI_MODELS, defaultModelFor };
+export { AI_MODELS, AI_MODEL_OPTIONS, defaultModelFor };
 
 function env(name: string): string | undefined {
   const v = process.env[name]?.trim();

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AI_MODELS,
+  AI_MODEL_OPTIONS,
   defaultModelFor,
   type AiProvider,
   type Mode,
@@ -48,7 +48,7 @@ export default function HomePage() {
   const [jobsError, setJobsError] = useState<string | null>(null);
   const [jobsLoading, setJobsLoading] = useState(true);
 
-  const models = useMemo(() => AI_MODELS[aiProvider], [aiProvider]);
+  const models = useMemo(() => AI_MODEL_OPTIONS[aiProvider], [aiProvider]);
 
   const loadJobs = useCallback(async () => {
     setJobsLoading(true);
@@ -84,8 +84,10 @@ export default function HomePage() {
 
   function onProviderChange(next: AiProvider) {
     setAiProvider(next);
-    const list = AI_MODELS[next];
-    setAiModel((prev) => (list.includes(prev) ? prev : defaultModelFor(next)));
+    const list = AI_MODEL_OPTIONS[next];
+    setAiModel((prev) =>
+      list.some((m) => m.id === prev) ? prev : defaultModelFor(next),
+    );
   }
 
   function onCsvFile(file: File | null) {
@@ -257,14 +259,14 @@ export default function HomePage() {
             onChange={(e) => setAiModel(e.target.value)}
           >
             {models.map((m) => (
-              <option key={m} value={m}>
-                {m}
+              <option key={m.id} value={m.id}>
+                {m.label}
               </option>
             ))}
           </select>
           <span className="hint">
-            Keys live in n8n credentials (Gemini account / OpenAI account) — not
-            in this form.
+            Larger models map steps more accurately but cost more / run slower.
+            Keys live in n8n credentials — not in this form.
           </span>
         </label>
 

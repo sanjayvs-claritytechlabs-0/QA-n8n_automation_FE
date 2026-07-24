@@ -82,6 +82,8 @@ type ArtifactRow = {
   meta?: Record<string, unknown> | null;
   execution_result_id?: string | null;
   created_at?: string | null;
+  case_title?: string | null;
+  result_status?: string | null;
 };
 
 type JobStatus = {
@@ -156,12 +158,60 @@ function artifactHref(a: ArtifactRow, jobId: string): string | null {
 }
 
 function artifactLabel(a: ArtifactRow): string {
+  const meta = a.meta && typeof a.meta === "object" ? a.meta : {};
   const format =
-    a.meta && typeof a.meta.format === "string" ? a.meta.format : null;
-  if (a.kind === "report" && format) return `report.${format}`;
-  const key = a.object_key || "";
-  const base = key.split("/").pop();
-  return base || a.kind || "artifact";
+    typeof meta.format === "string" ? meta.format : null;
+  const filename =
+    typeof meta.filename === "string"
+      ? meta.filename
+      : (a.object_key || "").split("/").pop() || "";
+  const phase = typeof meta.phase === "string" ? meta.phase : null;
+  const caseTitle =
+    (typeof a.case_title === "string" && a.case_title.trim()) ||
+    (typeof meta.case_title === "string" && meta.case_title.trim()) ||
+    "";
+  const status =
+    (typeof a.result_status === "string" && a.result_status) ||
+    (typeof meta.result_status === "string" && meta.result_status) ||
+    "";
+
+  if (a.kind === "report") {
+    if (format === "html") return "HTML report";
+    if (format === "json") return "JSON report";
+    return filename || "Report";
+  }
+
+  if (phase === "discovery") {
+    const kindNice =
+      a.kind === "html_snapshot"
+        ? "Page HTML"
+        : a.kind === "screenshot"
+          ? "Page screenshot"
+          : a.kind;
+    return filename
+      ? `Discovery · ${kindNice} · ${filename}`
+      : `Discovery · ${kindNice}`;
+  }
+
+  const kindNice =
+    a.kind === "screenshot"
+      ? "Screenshot"
+      : a.kind === "video"
+        ? "Video"
+        : a.kind === "trace"
+          ? "Trace"
+          : a.kind === "html_snapshot"
+            ? "HTML snapshot"
+            : a.kind || "Artifact";
+
+  if (caseTitle) {
+    return status
+      ? `${kindNice} · ${caseTitle} (${status})`
+      : `${kindNice} · ${caseTitle}`;
+  }
+
+  if (filename && filename !== a.id) return `${kindNice} · ${filename}`;
+  return kindNice;
 }
 
 function locatorLabel(l: LocatorOpt): string {
@@ -1357,7 +1407,9 @@ export default function JobPage() {
                   const href = artifactHref(a, jobId);
                   return (
                     <li key={a.id}>
-                      <span className="artifact-kind">video</span>
+                      <span className="artifact-kind">
+                        {a.kind === "video" ? "video" : a.kind}
+                      </span>{" "}
                       {href ? (
                         <a href={href} target="_blank" rel="noopener noreferrer">
                           {artifactLabel(a)}

@@ -109,7 +109,8 @@ Open http://localhost:3000
 | `N8N_EXTERNAL_STORAGE_S3_BUCKET_NAME` | yes* | Usually same as `S3_BUCKET` |
 | `N8N_EXTERNAL_STORAGE_S3_BUCKET_REGION` | yes* | e.g. `auto` |
 | `N8N_EXTERNAL_STORAGE_S3_HOST` | yes* | e.g. `storage.railway.app` (no `https://` ok) |
-| `AI_MODEL` | no | Override default model name only |
+| `AI_PROVIDER` / `AI_MODEL` | no | Defaults for Create-or-Start; UI lists more OpenAI/Gemini models in `lib/ai-options.ts` (GPT-4.1/5/5.6, o3/o4, Gemini 2.5 Pro/Flash, 1.5, …) |
+
 | `CRAWL_MAX_DEPTH` | no | |
 | `CRAWL_MAX_PAGES` | no | |
 | `BROWSER` | no | default `chromium` |
