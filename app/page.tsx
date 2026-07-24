@@ -40,6 +40,7 @@ export default function HomePage() {
   const [crawlDepth, setCrawlDepth] = useState(1);
   const [crawlPages, setCrawlPages] = useState(8);
   const [csvText, setCsvText] = useState("");
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvFilename, setCsvFilename] = useState<string | null>(null);
   const [csvPasteOpen, setCsvPasteOpen] = useState(false);
   const [csvFileError, setCsvFileError] = useState<string | null>(null);
@@ -92,56 +93,63 @@ export default function HomePage() {
   function onCsvFile(file: File | null) {
     setCsvFileError(null);
     if (!file) return;
-    const name = file.name || "cases.csv";
-    if (
-      file.type &&
-      !file.type.includes("csv") &&
-      !file.type.includes("text") &&
-      !name.toLowerCase().endsWith(".csv")
-    ) {
-      setCsvFileError("Choose a .csv file");
+    if (file.size === 0) {
+      setCsvFileError("File is empty");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result : "";
-      if (!text.trim()) {
-        setCsvFileError("CSV file is empty");
-        return;
-      }
-      setCsvText(text);
-      setCsvFilename(name);
-      setCsvPasteOpen(false);
-    };
-    reader.onerror = () => setCsvFileError("Could not read file");
-    reader.readAsText(file);
+    const name = file.name || "cases.csv";
+    if (!/\.(csv|tsv|txt|xlsx|xls)$/i.test(name)) {
+      setCsvFileError("Choose a .csv, .tsv, or .xlsx file");
+      return;
+    }
+    // Keep the File object — do not FileReader before submit (async race).
+    setCsvFile(file);
+    setCsvFilename(name);
+    setCsvText("");
+    setCsvPasteOpen(false);
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (mode === "manual_csv" && !csvText.trim()) {
-      setError("Upload or paste a CSV with at least one test case");
+    if (mode === "manual_csv" && !csvFile && !csvText.trim()) {
+      setError("Upload a .csv / .tsv / .xlsx file or paste CSV text");
       return;
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          project_name: projectName,
-          website_url: websiteUrl,
-          mode,
-          csv_text: mode === "manual_csv" ? csvText : undefined,
-          csv_filename:
-            mode === "manual_csv" && csvFilename ? csvFilename : undefined,
-          ai_provider: aiProvider,
-          ai_model: aiModel,
-          crawl_max_depth: crawlDepth,
-          crawl_max_pages: crawlPages,
-        }),
-      });
+      let res: Response;
+      if (mode === "manual_csv" && csvFile) {
+        const fd = new FormData();
+        fd.append("project_name", projectName);
+        fd.append("website_url", websiteUrl);
+        fd.append("mode", mode);
+        fd.append("ai_provider", aiProvider);
+        fd.append("ai_model", aiModel);
+        fd.append("crawl_max_depth", String(crawlDepth));
+        fd.append("crawl_max_pages", String(crawlPages));
+        fd.append("csv_file", csvFile, csvFile.name);
+        res = await fetch("/api/jobs", { method: "POST", body: fd });
+      } else {
+        res = await fetch("/api/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project_name: projectName,
+            website_url: websiteUrl,
+            mode,
+            csv_text: mode === "manual_csv" ? csvText : undefined,
+            csv_filename:
+              mode === "manual_csv"
+                ? csvFilename || "pasted.csv"
+                : undefined,
+            ai_provider: aiProvider,
+            ai_model: aiModel,
+            crawl_max_depth: crawlDepth,
+            crawl_max_pages: crawlPages,
+          }),
+        });
+      }
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok || !data?.job_id) {
         const msg =
@@ -302,16 +310,18 @@ export default function HomePage() {
 
         {mode === "manual_csv" && (
           <fieldset className="field-group">
-            <legend>CSV test cases</legend>
+            <legend>Test cases file</legend>
             <label>
-              Upload CSV
+              Upload CSV / TSV / Excel
               <span className="hint">
                 Header row required. Columns: id, title, steps, expected, tags
+                (aliases ok). First sheet only for .xlsx/.xls. Tab or semicolon
+                CSV is normalized server-side.
               </span>
               <input
                 type="file"
                 name="csv_file"
-                accept=".csv,text/csv"
+                accept=".csv,.tsv,.txt,.xlsx,.xls,text/csv,text/tab-separated-values,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null;
                   onCsvFile(f);
@@ -321,10 +331,12 @@ export default function HomePage() {
             </label>
             {csvFilename ? (
               <p className="meta" style={{ margin: 0 }}>
-                Loaded: <code>{csvFilename}</code>
-                {csvText.trim()
-                  ? ` · ${csvText.trim().split(/\r?\n/).filter(Boolean).length - 1} data row(s) approx`
-                  : null}
+                Ready: <code>{csvFilename}</code>
+                {csvFile
+                  ? ` · ${(csvFile.size / 1024).toFixed(1)} KB`
+                  : csvText.trim()
+                    ? ` · ${csvText.trim().split(/\r?\n/).filter(Boolean).length - 1} data row(s) approx`
+                    : null}
               </p>
             ) : null}
             {csvFileError ? (
@@ -347,6 +359,7 @@ export default function HomePage() {
                   value={csvText}
                   onChange={(e) => {
                     setCsvText(e.target.value);
+                    setCsvFile(null);
                     setCsvFilename(null);
                   }}
                   spellCheck={false}
@@ -356,8 +369,11 @@ export default function HomePage() {
                 />
               </label>
             ) : null}
-            {!csvText.trim() ? (
-              <span className="hint">A non-empty CSV is required for Manual mode.</span>
+            {!csvFile && !csvText.trim() ? (
+              <span className="hint">
+                A non-empty .csv / .tsv / .xlsx (or paste) is required for Manual
+                mode.
+              </span>
             ) : null}
           </fieldset>
         )}

@@ -73,7 +73,16 @@ Optional server env (injected into Create-or-Start `options`):
 
 Job detail **Cases** defaults to a form editor for structured plans (`steps` / `assertions` / `summary` / `locator_id` dropdowns). **Advanced JSON** keeps Monaco for power users. Optional `playwright_source` is read-only — v1 execution ignores it (no script edit/re-run).
 
-Home **Manual/CSV** mode: file upload is primary (`accept=.csv`); paste is optional. Crawl depth/pages still run Discovery + Locators so the plan editor has a catalog.
+Home **Manual/CSV** mode: file upload is primary; paste is optional. Supported uploads:
+
+| Type | Notes |
+|------|--------|
+| `.csv` | Comma-separated (UTF-8; BOM stripped). Windows Excel MIME quirks accepted. |
+| `.tsv` / tab-separated | Detected and normalized to comma-CSV before n8n Import |
+| Semicolon CSV (Excel EU) | Detected from header (more `;` than `,`) and normalized |
+| `.xlsx` / `.xls` | **First sheet only** → CSV via SheetJS in `POST /api/jobs` |
+
+Required header aliases (PRD 05): `title` (or name/test_case/…); optional `id`, `steps`, `expected`, `tags`. Server converts the file then sends `csv_text` to n8n Create-or-Start (n8n CSV Import dialect unchanged). Crawl depth/pages still run Discovery + Locators so the plan editor has a catalog.
 
 ## Local setup
 

@@ -6,6 +6,7 @@ import {
   type AiProvider,
   type Mode,
 } from "@/lib/n8n";
+import { caseFileToCsvText } from "@/lib/case-file";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,11 +25,33 @@ type Body = {
   crawl_max_pages?: number;
 };
 
+type ParsedStart = {
+  project_name: string;
+  website_url: string;
+  mode: Mode;
+  csv_text: string;
+  csv_filename?: string;
+  project_id?: string;
+  callback_url?: string;
+  ai_provider?: AiProvider;
+  ai_model?: string;
+  crawl_max_depth?: number;
+  crawl_max_pages?: number;
+};
+
 function parseOptionalInt(v: unknown): number | undefined {
   if (v == null || v === "") return undefined;
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return undefined;
   return Math.floor(n);
+}
+
+function asMode(v: unknown): Mode {
+  return v === "manual_csv" ? "manual_csv" : "ai_qa";
+}
+
+function asProvider(v: unknown): AiProvider | undefined {
+  return v === "openai" || v === "gemini" ? v : undefined;
 }
 
 /** Recent jobs for home dashboard → n8n GET /webhook/qa/jobs */
@@ -98,26 +121,158 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: Request) {
+async function parseStartRequest(request: Request): Promise<
+  | { ok: true; data: ParsedStart }
+  | { ok: false; response: NextResponse }
+> {
+  const contentType = request.headers.get("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return {
+        ok: false,
+        response: jsonError(
+          400,
+          "VALIDATION_ERROR",
+          "Could not parse multipart body",
+        ),
+      };
+    }
+
+    const project_name = String(form.get("project_name") ?? "").trim();
+    const website_url = String(form.get("website_url") ?? "").trim();
+    const mode = asMode(form.get("mode"));
+    const project_id = String(form.get("project_id") ?? "").trim() || undefined;
+    const callback_url =
+      String(form.get("callback_url") ?? "").trim() || undefined;
+    const ai_provider = asProvider(form.get("ai_provider"));
+    const ai_model = String(form.get("ai_model") ?? "").trim() || undefined;
+    const crawl_max_depth = parseOptionalInt(form.get("crawl_max_depth"));
+    const crawl_max_pages = parseOptionalInt(form.get("crawl_max_pages"));
+
+    let csv_text = "";
+    let csv_filename: string | undefined;
+
+    const file = form.get("csv_file");
+    if (file instanceof File && file.size > 0) {
+      const filename = file.name || "cases.csv";
+      const buf = Buffer.from(await file.arrayBuffer());
+      const converted = caseFileToCsvText({ filename, buffer: buf });
+      if (!converted.ok) {
+        return {
+          ok: false,
+          response: jsonError(400, converted.code, converted.message),
+        };
+      }
+      csv_text = converted.csv_text;
+      csv_filename = converted.csv_filename;
+    } else {
+      const pasted = String(form.get("csv_text") ?? "");
+      const fname =
+        String(form.get("csv_filename") ?? "").trim() || "pasted.csv";
+      if (pasted.trim()) {
+        const converted = caseFileToCsvText({
+          filename: fname,
+          text: pasted,
+        });
+        if (!converted.ok) {
+          return {
+            ok: false,
+            response: jsonError(400, converted.code, converted.message),
+          };
+        }
+        csv_text = converted.csv_text;
+        csv_filename = converted.csv_filename;
+      }
+    }
+
+    return {
+      ok: true,
+      data: {
+        project_name,
+        website_url,
+        mode,
+        csv_text,
+        csv_filename,
+        project_id,
+        callback_url,
+        ai_provider,
+        ai_model,
+        crawl_max_depth,
+        crawl_max_pages,
+      },
+    };
+  }
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
   } catch {
-    return jsonError(400, "VALIDATION_ERROR", "Request body must be JSON");
+    return {
+      ok: false,
+      response: jsonError(400, "VALIDATION_ERROR", "Request body must be JSON"),
+    };
   }
 
   const project_name = body.project_name?.trim() ?? "";
   const website_url = body.website_url?.trim() ?? "";
-  const mode: Mode = body.mode === "manual_csv" ? "manual_csv" : "ai_qa";
-  const csv_text = body.csv_text?.trim() ?? "";
-  const csv_filename = body.csv_filename?.trim() || undefined;
-  const ai_provider: AiProvider | undefined =
-    body.ai_provider === "openai" || body.ai_provider === "gemini"
-      ? body.ai_provider
-      : undefined;
-  const ai_model = body.ai_model?.trim() || undefined;
-  const crawl_max_depth = parseOptionalInt(body.crawl_max_depth);
-  const crawl_max_pages = parseOptionalInt(body.crawl_max_pages);
+  const mode = asMode(body.mode);
+  let csv_text = "";
+  let csv_filename = body.csv_filename?.trim() || undefined;
+
+  if (typeof body.csv_text === "string" && body.csv_text.trim()) {
+    const converted = caseFileToCsvText({
+      filename: csv_filename || "pasted.csv",
+      text: body.csv_text,
+    });
+    if (!converted.ok) {
+      return {
+        ok: false,
+        response: jsonError(400, converted.code, converted.message),
+      };
+    }
+    csv_text = converted.csv_text;
+    csv_filename = converted.csv_filename;
+  }
+
+  return {
+    ok: true,
+    data: {
+      project_name,
+      website_url,
+      mode,
+      csv_text,
+      csv_filename,
+      project_id: body.project_id?.trim() || undefined,
+      callback_url: body.callback_url?.trim() || undefined,
+      ai_provider: asProvider(body.ai_provider),
+      ai_model: body.ai_model?.trim() || undefined,
+      crawl_max_depth: parseOptionalInt(body.crawl_max_depth),
+      crawl_max_pages: parseOptionalInt(body.crawl_max_pages),
+    },
+  };
+}
+
+export async function POST(request: Request) {
+  const parsed = await parseStartRequest(request);
+  if (!parsed.ok) return parsed.response;
+
+  const {
+    project_name,
+    website_url,
+    mode,
+    csv_text,
+    csv_filename,
+    project_id,
+    callback_url,
+    ai_provider,
+    ai_model,
+    crawl_max_depth,
+    crawl_max_pages,
+  } = parsed.data;
 
   if (!project_name) {
     return jsonError(400, "VALIDATION_ERROR", "project_name is required");
@@ -133,8 +288,12 @@ export async function POST(request: Request) {
   } catch {
     return jsonError(400, "VALIDATION_ERROR", "website_url is not a valid URL");
   }
-  if (mode === "manual_csv" && !csv_text) {
-    return jsonError(400, "VALIDATION_ERROR", "csv_text is required for manual_csv mode");
+  if (mode === "manual_csv" && !csv_text.trim()) {
+    return jsonError(
+      400,
+      "VALIDATION_ERROR",
+      "Upload a .csv / .tsv / .xlsx file or paste CSV text for Manual mode",
+    );
   }
 
   let cfg: ReturnType<typeof n8nConfig>;
@@ -164,8 +323,8 @@ export async function POST(request: Request) {
     payload.csv_text = csv_text;
     if (csv_filename) payload.csv_filename = csv_filename;
   }
-  if (body.project_id?.trim()) payload.project_id = body.project_id.trim();
-  if (body.callback_url?.trim()) payload.callback_url = body.callback_url.trim();
+  if (project_id) payload.project_id = project_id;
+  if (callback_url) payload.callback_url = callback_url;
 
   try {
     const res = await fetch(`${cfg.baseUrl}/webhook/qa/create-or-start`, {
